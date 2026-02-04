@@ -2,26 +2,15 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult } from "../types";
 
-// API Key는 코드에 저장하지 않고 환경 변수에서 가져옵니다.
-// 배포 환경(Vercel, Netlify 등)의 설정에서 API_KEY를 추가해야 합니다.
-const getAiClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    console.error("Gemini API Key가 설정되지 않았습니다. 환경 변수 API_KEY를 확인하세요.");
-    return null;
-  }
-  return new GoogleGenAI({ apiKey });
-};
-
 export interface FileInput {
   data: string; // base64 string
   mimeType: string;
 }
 
 export const analyzeDrawing = async (files: FileInput[]): Promise<AnalysisResult | null> => {
-  const ai = getAiClient();
-  if (!ai) return null;
-
+  // Fix: Use process.env.API_KEY directly as per guidelines
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
   try {
     const parts = [
       ...files.map(file => {
@@ -119,8 +108,8 @@ export const analyzeDrawing = async (files: FileInput[]): Promise<AnalysisResult
 };
 
 export const suggestSitePlan = async (siteName: string) => {
-    const ai = getAiClient();
-    if (!ai) return "";
+    // Fix: Use process.env.API_KEY directly as per guidelines
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',

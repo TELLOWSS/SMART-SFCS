@@ -701,6 +701,7 @@ const App: React.FC = () => {
 
     if (data.nextStatus === ProcessStatus.APPROVAL_REQ) {
         title = "SFCS 설치완료 보고";
+        // [User Request] 요청하신 'AL폼 조립 및 슬라브 완성...' 문구 반영
         message = `[설치완료 보고]\n현장: ${data.buildingName}\n위치: ${data.floorLevel}층 ${data.unitNumber}호\n상태: AL폼 조립 및 슬라브 완성, 서포트 설치 완료. 검측 요청합니다.`;
     } else if (data.nextStatus === ProcessStatus.APPROVED) {
         title = "SFCS 승인완료 통보";
@@ -834,12 +835,13 @@ const App: React.FC = () => {
              }
            }} className="w-full flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
               <div className="flex items-center">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 font-black text-xs shadow-lg ${currentUserRole === UserRole.CREATOR ? 'bg-purple-500 text-white' : currentUserRole === UserRole.ADMIN ? 'bg-blue-500 text-white' : 'bg-slate-600 text-slate-300'}`}>
-                      {currentUserRole === UserRole.CREATOR ? '제' : currentUserRole === UserRole.ADMIN ? '관' : '작'}
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center mr-3 font-black text-xs shadow-lg flex-shrink-0 relative overflow-hidden">
+                      <div className={`absolute inset-0 ${currentUserRole === UserRole.CREATOR ? 'bg-purple-500' : currentUserRole === UserRole.ADMIN ? 'bg-blue-500' : 'bg-slate-600'}`}></div>
+                      <span className="relative z-10 text-white">{currentUserRole === UserRole.CREATOR ? '제' : currentUserRole === UserRole.ADMIN ? '관' : '작'}</span>
                   </div>
-                  <div className="text-left"><p className="text-xs font-black text-white">{currentUserRole}</p><p className="text-[10px] text-slate-500">모드 전환</p></div>
+                  <div className="text-left min-w-0"><p className="text-xs font-black text-white truncate">{currentUserRole}</p><p className="text-[10px] text-slate-500">모드 전환</p></div>
               </div>
-              <ChevronRight className="w-4 h-4 text-slate-600" />
+              <ChevronRight className="w-4 h-4 text-slate-600 flex-shrink-0" />
            </button>
         </div>
       </aside>
