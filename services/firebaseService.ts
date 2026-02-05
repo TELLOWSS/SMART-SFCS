@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, query, orderBy, limit, enableIndexedDbPersistence, initializeFirestore, CACHE_SIZE_UNLIMITED } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, query, orderBy, limit, enableIndexedDbPersistence, initializeFirestore, CACHE_SIZE_UNLIMITED, deleteDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Building, ChatMessage } from '../types';
 
@@ -152,6 +152,23 @@ export const sendChatMessage = async (msg: Omit<ChatMessage, 'id'>) => {
         await addDoc(collection(db, "messages"), msg);
     } catch (e) {
         console.error("Message send failed:", e);
+    }
+};
+
+// 7. [추가] 채팅 메시지 전체 삭제 (초기화용)
+export const clearChatMessages = async () => {
+    if (!db) return;
+    try {
+        const q = collection(db, "messages");
+        const snapshot = await getDocs(q);
+        const batch = writeBatch(db);
+        snapshot.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
+        console.log("채팅 데이터 초기화 완료");
+    } catch (e) {
+        console.error("채팅 초기화 실패:", e);
     }
 };
 

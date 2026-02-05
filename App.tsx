@@ -47,7 +47,7 @@ import AnalysisView from './components/AnalysisView';
 import Manual from './components/Manual';
 import LiveChat from './components/LiveChat';
 import { suggestSitePlan } from './services/geminiService';
-import { syncBuildings, saveBuilding, initializeDataIfEmpty, saveAllBuildings, sendChatMessage } from './services/firebaseService';
+import { syncBuildings, saveBuilding, initializeDataIfEmpty, saveAllBuildings, sendChatMessage, clearChatMessages } from './services/firebaseService';
 
 // 전역 상태 변경 모달을 위한 타입
 interface StatusModalData {
@@ -259,6 +259,33 @@ const generateInitialBuildings = (): Building[] => {
   });
 };
 
+// [System Notification Helper] 브라우저 알림 및 소리 재생 함수
+const notifySystem = (title: string, body: string, soundUrl: string = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3') => {
+  // 1. 오디오 재생 (사용자 인터랙션 이후에만 동작할 수 있음)
+  try {
+    const audio = new Audio(soundUrl);
+    audio.volume = 0.5;
+    audio.play().catch(e => console.log('Audio play blocked (needs user interaction first):', e));
+  } catch (e) {
+    console.error('Sound error:', e);
+  }
+
+  // 2. 시스템 알림 (브라우저가 백그라운드일 때 유용)
+  if (!("Notification" in window)) {
+    return;
+  }
+  
+  if (Notification.permission === "granted") {
+    new Notification(title, { body, icon: '/vite.svg' });
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission().then((permission) => {
+      if (permission === "granted") {
+        new Notification(title, { body, icon: '/vite.svg' });
+      }
+    });
+  }
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'analysis' | 'manual'>('dashboard');
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>(UserRole.WORKER);
@@ -294,6 +321,13 @@ const App: React.FC = () => {
   const prevBuildingsRef = useRef<Building[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // [초기화] 브라우저 알림 권한 요청
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
+        Notification.requestPermission();
+    }
+  }, []);
 
   // [Real-time Sync] Firebase 데이터 동기화
   useEffect(() => {
@@ -333,6 +367,12 @@ const App: React.FC = () => {
                                             timestamp: '방금 전', 
                                             read: false 
                                         }, ...prev]);
+                                        
+                                        // [시스템 알림 & 소리] 백그라운드에서도 인지 가능하도록 호출
+                                        notifySystem(
+                                          'SFCS 승인 요청 알림', 
+                                          `${newB.name} ${newF.level}층 ${newU.unitNumber}호에서 검측 승인이 요청되었습니다.`
+                                        );
                                     }
                                     // 2. 승인 완료 시
                                     else if (newU.status === ProcessStatus.APPROVED) {
@@ -343,6 +383,11 @@ const App: React.FC = () => {
                                             timestamp: '방금 전', 
                                             read: false 
                                         }, ...prev]);
+                                        
+                                        notifySystem(
+                                          'SFCS 승인 완료',
+                                          `${newB.name} ${newF.level}층 ${newU.unitNumber}호가 승인되었습니다.`
+                                        );
                                     }
                                 }
                             });
@@ -506,6 +551,12 @@ const App: React.FC = () => {
 
   const handleCreatorBatchAction = async (action: 'RESET' | 'REINIT' | 'INSTALL' | 'REQ' | 'APPROVE' | 'MEP') => {
       if (!window.confirm("선택한 일괄 작업을 수행하시겠습니까? 데이터가 변경됩니다.")) return;
+
+      // [수정] RESET 또는 REINIT 시 채팅 내역도 삭제
+      if (action === 'REINIT' || action === 'RESET') {
+          await clearChatMessages();
+          addNotification("채팅 내역이 초기화되었습니다.", "info");
+      }
 
       if (action === 'REINIT') {
           const initialData = generateInitialBuildings();
@@ -712,7 +763,7 @@ const App: React.FC = () => {
       navigator.share({ title: title, text: message }).catch(console.error);
     } else {
       navigator.clipboard.writeText(message);
-      addNotification("메시지가 복사되었습니다. 카카오톡/문자로 붙여넣으세요.", "success");
+      addNotification("메시지가 클립보드에 복사되었습니다. 카카오톡을 열어 붙여넣기 하세요.", "success");
     }
   };
 
@@ -1101,8 +1152,15 @@ const App: React.FC = () => {
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 md:top-auto md:left-auto md:bottom-6 md:right-6 z-[300] flex flex-col gap-3 pointer-events-none p-4 md:p-0 items-center md:items-end">
-        {notifications.filter(n => !n.read && Date.now() - parseInt(n.id) < 5000).map(n => (
-          <div key={n.id} className="bg-white/90 backdrop-blur-md border border-slate-200 p-4 rounded-2xl shadow-2xl animate-slide-up pointer-events-auto flex items-center gap-3 w-full md:w-auto md:min-w-[300px]">
+        {notifications
+            .filter(n => !n.read && Date.now() - parseInt(n.id) < 5000)
+            .slice(0, 3) // [변경] 최대 3개까지만 표시
+            .map(n => (
+          <div 
+            key={n.id} 
+            onClick={() => setNotifications(prev => prev.map(p => p.id === n.id ? {...p, read: true} : p))} // [변경] 클릭 시 닫기
+            className="cursor-pointer hover:bg-slate-50 transition-colors bg-white/90 backdrop-blur-md border border-slate-200 p-4 rounded-2xl shadow-2xl animate-slide-up pointer-events-auto flex items-center gap-3 w-full md:w-auto md:min-w-[300px]"
+          >
              {n.type === 'success' ? <Check className="w-5 h-5 text-emerald-500"/> : <Bell className="w-5 h-5 text-orange-500"/>}
              <div className="flex-1">
                 <p className="text-xs font-black text-slate-800">{n.type === 'success' ? '승인 완료' : '알림'}</p>
@@ -1157,7 +1215,7 @@ const App: React.FC = () => {
                   </p>
                   <button onClick={() => shareCompletion(statusModal)} className={`w-full flex items-center justify-center space-x-2 py-3 bg-white border rounded-xl font-black text-xs shadow-sm active:scale-95 transition-colors ${statusModal.nextStatus === ProcessStatus.APPROVED ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-100' : 'border-orange-200 text-orange-600 hover:bg-orange-100'}`}>
                       <Share2 className="w-4 h-4" />
-                      <span>메시지 복사 / 공유하기</span>
+                      <span>카카오톡 / 문자로 알림 전송</span>
                   </button>
                 </div>
               )}
