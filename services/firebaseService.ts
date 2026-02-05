@@ -2,7 +2,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, query, orderBy, limit, enableIndexedDbPersistence, initializeFirestore, CACHE_SIZE_UNLIMITED, deleteDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { Building, ChatMessage } from '../types';
+import { Building, ChatMessage, AnalysisResult } from '../types';
 
 // ==================================================================================
 // [설정 완료] 사용자가 제공한 Firebase 키 적용됨
@@ -155,7 +155,7 @@ export const sendChatMessage = async (msg: Omit<ChatMessage, 'id'>) => {
     }
 };
 
-// 7. [추가] 채팅 메시지 전체 삭제 (초기화용)
+// 7. 채팅 메시지 전체 삭제 (초기화용)
 export const clearChatMessages = async () => {
     if (!db) return;
     try {
@@ -170,6 +170,33 @@ export const clearChatMessages = async () => {
     } catch (e) {
         console.error("채팅 초기화 실패:", e);
     }
+};
+
+// 8. [신규] AI 분석 결과 저장 (Persistence)
+export const saveAnalysisResult = async (result: AnalysisResult) => {
+    if (!db) return;
+    try {
+        // site_data 컬렉션의 analysis 문서를 덮어씁니다.
+        await setDoc(doc(db, "site_data", "analysis"), result);
+    } catch (e) {
+        console.error("Analysis save failed:", e);
+    }
+};
+
+// 9. [신규] AI 분석 결과 실시간 구독
+export const subscribeToAnalysisResult = (callback: (result: AnalysisResult | null) => void) => {
+    if (!db) return () => {};
+    
+    const unsubscribe = onSnapshot(doc(db, "site_data", "analysis"), (doc) => {
+        if (doc.exists()) {
+            callback(doc.data() as AnalysisResult);
+        } else {
+            callback(null);
+        }
+    }, (error) => {
+        console.error("Analysis sync error:", error);
+    });
+    return unsubscribe;
 };
 
 export const updateUnitStatus = async () => {};

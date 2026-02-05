@@ -47,7 +47,16 @@ import AnalysisView from './components/AnalysisView';
 import Manual from './components/Manual';
 import LiveChat from './components/LiveChat';
 import { suggestSitePlan } from './services/geminiService';
-import { syncBuildings, saveBuilding, initializeDataIfEmpty, saveAllBuildings, sendChatMessage, clearChatMessages } from './services/firebaseService';
+import { 
+    syncBuildings, 
+    saveBuilding, 
+    initializeDataIfEmpty, 
+    saveAllBuildings, 
+    sendChatMessage, 
+    clearChatMessages, 
+    subscribeToAnalysisResult, 
+    saveAnalysisResult 
+} from './services/firebaseService';
 
 // 전역 상태 변경 모달을 위한 타입
 interface StatusModalData {
@@ -420,6 +429,14 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  // [신규] 분석 결과 실시간 구독 (모든 사용자)
+  useEffect(() => {
+    const unsubscribe = subscribeToAnalysisResult((data) => {
+        setLastAnalysisResult(data);
+    });
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     const handleScroll = () => setShowScrollTop(window.scrollY > 400);
     window.addEventListener('scroll', handleScroll);
@@ -488,12 +505,6 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (currentUserRole === UserRole.WORKER && activeTab === 'analysis') {
-      setActiveTab('dashboard');
-    }
-  }, [currentUserRole, activeTab]);
-
-  useEffect(() => {
     const fetchSuggestion = async () => {
         if (!aiSuggestion) {
             const cached = localStorage.getItem(`sitePlan_${siteName}`);
@@ -514,11 +525,16 @@ const App: React.FC = () => {
   };
 
   const handleAnalysisComplete = (result: AnalysisResult) => {
+      // 로컬 상태 업데이트
       setLastAnalysisResult(result);
       setSiteName(result.siteName);
       setProjectCode(result.projectCode);
       setAiSuggestion(result.summary);
-      addNotification("도면 분석이 완료되었습니다. (대시보드 반영 안 함)", "success");
+      
+      // [신규] Firebase에 분석 결과 저장 (Persistence)
+      saveAnalysisResult(result);
+      
+      addNotification("도면 분석이 완료되었습니다. (서버 동기화됨)", "success");
   };
 
   const handleBackup = () => {
@@ -790,11 +806,10 @@ const App: React.FC = () => {
             <LayoutDashboard className="w-5 h-5 mr-3" /> 현황 대시보드
           </button>
           
-          {(currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR) && (
-            <button onClick={() => {setActiveTab('analysis'); scrollToTop();}} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'analysis' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
-              <MapIcon className="w-5 h-5 mr-3" /> AI 도면/데이터 분석
-            </button>
-          )}
+          <button onClick={() => {setActiveTab('analysis'); scrollToTop();}} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'analysis' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
+            <MapIcon className="w-5 h-5 mr-3" /> AI 도면/데이터 분석
+          </button>
+          
           <button onClick={() => {setActiveTab('manual'); scrollToTop();}} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'manual' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
             <FileText className="w-5 h-5 mr-3" /> 기술 아키텍처
           </button>
@@ -1115,7 +1130,7 @@ const App: React.FC = () => {
                 </div>
               </>
             )}
-            {activeTab === 'analysis' && (currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR) && (
+            {activeTab === 'analysis' && (
               <AnalysisView 
                 buildings={buildings} 
                 onAnalysisComplete={handleAnalysisComplete} 

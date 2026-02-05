@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Loader2, CheckCircle, AlertTriangle, FileText, Scan, Zap, X, Image as ImageIcon, Shield, AlertOctagon, ClipboardList, Activity, FileSpreadsheet, Info, Download, RotateCcw, Check, Lock } from 'lucide-react';
+import { Upload, Loader2, CheckCircle, AlertTriangle, FileText, Scan, Zap, X, Image as ImageIcon, Shield, AlertOctagon, ClipboardList, Activity, FileSpreadsheet, Info, Download, RotateCcw, Check, Lock, Eye } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { analyzeDrawing, FileInput } from '../services/geminiService';
 import { Building, AnalysisResult, UserRole } from '../types';
@@ -186,6 +187,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
             <span className="text-[10px] bg-slate-800 px-4 py-2 rounded-xl border border-slate-700 font-mono text-brand-accent flex items-center shadow-inner">
                <Zap className="w-3.5 h-3.5 mr-2 text-yellow-400" fill="currentColor" /> GEMINI 3.0 FLASH-PRIME
             </span>
+            {/* 리셋 버튼은 제작자에게만 표시 */}
             {result && userRole === UserRole.CREATOR && (
               <button onClick={() => {setResult(null); setUploadedFiles([]);}} className="p-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl hover:bg-red-500/20 transition-all">
                 <RotateCcw className="w-4 h-4" />
@@ -256,19 +258,31 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
               </div>
             </div>
         ) : (
-            // 관리자에게는 분석 엔진 설명만 표시
+            // 관리자/작업자에게는 "보기 전용 모드" 안내만 작게 표시
             <div className="lg:col-span-4 space-y-6">
-                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center h-[500px]">
-                      <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center mb-6">
-                          <Lock className="w-8 h-8 text-slate-300" />
+                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center h-[200px]">
+                      <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 border border-slate-100">
+                          <Eye className="w-6 h-6 text-slate-400" />
                       </div>
-                      <h3 className="text-xl font-black text-slate-800 mb-2">Read-Only Mode</h3>
-                      <p className="text-sm text-slate-500 max-w-xs leading-relaxed">
-                          현재 관리자 권한으로 접속 중입니다.<br/>
-                          도면 업로드 및 AI 분석 실행은<br/>
-                          <span className="font-bold text-brand-primary">시스템 설계자(Creator)</span>만 가능합니다.
+                      <h3 className="text-sm font-black text-slate-800 mb-1">분석 결과 조회 모드</h3>
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                          제작자가 공유한 최신 분석 결과를 열람 중입니다.<br/>
+                          데이터 변경 및 재분석은 <span className="font-bold text-slate-700">제작자(Creator)</span>만 가능합니다.
                       </p>
                  </div>
+                 
+                 {/* 분석 결과가 있을 때만 요약 표시 */}
+                 {result && (
+                     <div className="p-6 bg-emerald-50 rounded-[2rem] border border-emerald-100 text-emerald-800">
+                         <div className="flex items-center mb-2">
+                             <CheckCircle className="w-4 h-4 mr-2" />
+                             <span className="text-xs font-black">Sync Completed</span>
+                         </div>
+                         <p className="text-[10px] opacity-80">
+                             분석 데이터가 서버와 동기화되었습니다.
+                         </p>
+                     </div>
+                 )}
             </div>
         )}
 
@@ -380,8 +394,17 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
                     <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-8 opacity-40">
                       <ImageIcon className="w-10 h-10" />
                     </div>
-                    <p className="text-lg font-black uppercase tracking-widest text-slate-300">Ready for Intelligence Scan</p>
-                    <p className="text-sm mt-4 opacity-60 text-center leading-relaxed font-medium">단지 배치도, 층별 평면도, 또는 구조 일람표를 업로드하십시오.<br/>AI가 비활성 세대(죽은세대)를 포함한 전체 디지털 트윈을 구성합니다.</p>
+                    {userRole === UserRole.CREATOR ? (
+                        <>
+                            <p className="text-lg font-black uppercase tracking-widest text-slate-300">Ready for Intelligence Scan</p>
+                            <p className="text-sm mt-4 opacity-60 text-center leading-relaxed font-medium">단지 배치도, 층별 평면도, 또는 구조 일람표를 업로드하십시오.<br/>AI가 비활성 세대(죽은세대)를 포함한 전체 디지털 트윈을 구성합니다.</p>
+                        </>
+                    ) : (
+                        <>
+                            <p className="text-lg font-black uppercase tracking-widest text-slate-300">No Analysis Data</p>
+                            <p className="text-sm mt-4 opacity-60 text-center leading-relaxed font-medium">아직 공유된 분석 결과가 없습니다.<br/>제작자가 도면 분석을 완료할 때까지 기다려주세요.</p>
+                        </>
+                    )}
                 </div>
             )}
         </div>
