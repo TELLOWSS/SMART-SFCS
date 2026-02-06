@@ -11,9 +11,11 @@ interface SiteMapProps {
 const SiteMap: React.FC<SiteMapProps> = ({ buildings, onSelectBuilding }) => {
   
   const getActiveInfo = (building: Building) => {
+    // [Updated] Include CURED in active units to display completed floors
+    // [Fix] Filter out dead units so they don't incorrectly show as completed progress
     const activeUnits = building.floors
       .flatMap(f => f.units)
-      .filter(u => u.status !== ProcessStatus.NOT_STARTED && u.status !== ProcessStatus.CURED);
+      .filter(u => !u.isDeadUnit && u.status !== ProcessStatus.NOT_STARTED);
 
     if (activeUnits.length === 0) return { floor: '-', status: ProcessStatus.NOT_STARTED };
 
@@ -26,6 +28,18 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, onSelectBuilding }) => {
     const installing = activeUnits.find(u => u.status === ProcessStatus.INSTALLING);
     if (installing) return { floor: installing.id.split('-')[1] + 'F', status: ProcessStatus.INSTALLING };
 
+    // [New] Check for CURED status (highest floor)
+    const curedList = activeUnits.filter(u => u.status === ProcessStatus.CURED);
+    if (curedList.length > 0) {
+        // Find the unit with the highest floor number
+        const highestCured = curedList.reduce((prev, curr) => {
+            const prevFloor = parseInt(prev.id.split('-')[1]);
+            const currFloor = parseInt(curr.id.split('-')[1]);
+            return prevFloor > currFloor ? prev : curr;
+        });
+        return { floor: highestCured.id.split('-')[1] + 'F', status: ProcessStatus.CURED };
+    }
+
     return { floor: '마감', status: ProcessStatus.APPROVED };
   };
 
@@ -34,6 +48,7 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, onSelectBuilding }) => {
       case ProcessStatus.POURING: return 'border-purple-500/40 shadow-glow';
       case ProcessStatus.APPROVAL_REQ: return 'border-brand-accent shadow-glow animate-pulse';
       case ProcessStatus.INSTALLING: return 'border-blue-500/40';
+      case ProcessStatus.CURED: return 'border-emerald-500/40'; // [New]
       default: return 'border-slate-800';
     }
   };
@@ -43,6 +58,7 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, onSelectBuilding }) => {
       case ProcessStatus.POURING: return 'text-purple-400';
       case ProcessStatus.APPROVAL_REQ: return 'text-orange-500';
       case ProcessStatus.INSTALLING: return 'text-blue-400';
+      case ProcessStatus.CURED: return 'text-emerald-400'; // [New]
       default: return 'text-slate-400';
     }
   };
@@ -59,6 +75,7 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, onSelectBuilding }) => {
               <span className="flex items-center"><div className="w-1.5 h-1.5 rounded-full bg-purple-600 mr-1.5"></div> 타설중</span>
               <span className="flex items-center"><div className="w-1.5 h-1.5 rounded-full bg-orange-600 mr-1.5"></div> 승인요청</span>
               <span className="flex items-center"><div className="w-1.5 h-1.5 rounded-full bg-blue-600 mr-1.5"></div> 설치중</span>
+              <span className="flex items-center"><div className="w-1.5 h-1.5 rounded-full bg-emerald-600 mr-1.5"></div> 양생완료</span>
            </div>
            <span>Active Syncing...</span>
         </div>

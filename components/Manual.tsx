@@ -5,7 +5,7 @@ import {
   Cpu, Zap, Globe, Lock, Layers, RefreshCw, 
   Activity, ArrowRight, Cloud,
   GitMerge, Box, Fingerprint, Network, Check,
-  ZapOff, Signal, Share2, BookOpen, Users, Key, FileJson, AlertTriangle
+  ZapOff, Signal, Share2, BookOpen, Users, Key, FileJson, AlertTriangle, Scan, MessageCircle
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -101,7 +101,7 @@ const Manual: React.FC<ManualProps> = ({ onClose }) => {
                             <ul className="text-xs text-slate-500 space-y-2 font-medium">
                                 <li className="flex items-start"><Check className="w-3.5 h-3.5 mr-2 text-slate-400 mt-0.5" /> 작업 상태 변경 (설치중, 보고)</li>
                                 <li className="flex items-start"><Check className="w-3.5 h-3.5 mr-2 text-slate-400 mt-0.5" /> 승인 요청 (관리자에게 알림)</li>
-                                <li className="flex items-start"><Check className="w-3.5 h-3.5 mr-2 text-slate-400 mt-0.5" /> 승인된 동호수 조회만 가능</li>
+                                <li className="flex items-start"><Check className="w-3.5 h-3.5 mr-2 text-slate-400 mt-0.5" /> 실시간 현장 채팅 참여 (New)</li>
                             </ul>
                         </div>
                         {/* 관리자 */}
@@ -114,7 +114,7 @@ const Manual: React.FC<ManualProps> = ({ onClose }) => {
                                 <li className="flex items-start"><Check className="w-3.5 h-3.5 mr-2 text-blue-500 mt-0.5" /> 작업 승인 및 반려 처리</li>
                                 <li className="flex items-start"><Check className="w-3.5 h-3.5 mr-2 text-blue-500 mt-0.5" /> 모든 상태 강제 변경 권한</li>
                                 <li className="flex items-start"><Check className="w-3.5 h-3.5 mr-2 text-blue-500 mt-0.5" /> 데이터 백업 및 복구</li>
-                                <li className="flex items-start"><Check className="w-3.5 h-3.5 mr-2 text-blue-500 mt-0.5" /> AI 분석 결과 열람 (업로드 불가)</li>
+                                <li className="flex items-start"><Check className="w-3.5 h-3.5 mr-2 text-blue-500 mt-0.5" /> 알림 전송 및 채팅 관리</li>
                             </ul>
                         </div>
                         {/* 제작자 */}
@@ -149,11 +149,12 @@ const Manual: React.FC<ManualProps> = ({ onClose }) => {
                                 </div>
                             </div>
                             <ArrowRight className="w-4 h-4 text-slate-300 rotate-90 md:rotate-0" />
+                            {/* [Color Fixed] Installing: Yellow to match BuildingSection */}
                             <div className="flex-1 group">
-                                <div className="text-[10px] font-black text-blue-400 mb-2 uppercase tracking-widest">Step 02 (작업자)</div>
-                                <div className="bg-blue-50 p-4 rounded-2xl border border-blue-200 group-hover:bg-blue-100 transition-colors">
-                                    <div className="text-sm font-black text-blue-700">설치중</div>
-                                    <div className="text-[10px] text-blue-400 mt-1">클릭하여 '설치중' 변경</div>
+                                <div className="text-[10px] font-black text-yellow-500 mb-2 uppercase tracking-widest">Step 02 (작업자)</div>
+                                <div className="bg-yellow-50 p-4 rounded-2xl border border-yellow-200 group-hover:bg-yellow-100 transition-colors">
+                                    <div className="text-sm font-black text-yellow-800">설치중</div>
+                                    <div className="text-[10px] text-yellow-600 mt-1">AL폼 조립 및 슬라브 완성, 서포트 설치 완료</div>
                                 </div>
                             </div>
                             <ArrowRight className="w-4 h-4 text-slate-300 rotate-90 md:rotate-0" />
@@ -161,58 +162,82 @@ const Manual: React.FC<ManualProps> = ({ onClose }) => {
                                 <div className="text-[10px] font-black text-orange-400 mb-2 uppercase tracking-widest">Step 03 (작업자)</div>
                                 <div className="bg-orange-50 p-4 rounded-2xl border border-orange-200 group-hover:bg-orange-100 transition-colors animate-pulse">
                                     <div className="text-sm font-black text-orange-700">승인 요청</div>
-                                    <div className="text-[10px] text-orange-400 mt-1">설치 완료 후 검측 요청</div>
+                                    <div className="text-[10px] text-orange-400 mt-1">설치 완료 보고 및 검측</div>
                                 </div>
                             </div>
                             <ArrowRight className="w-4 h-4 text-slate-300 rotate-90 md:rotate-0" />
+                            {/* [Color Fixed] Approved: Blue to match BuildingSection */}
                             <div className="flex-1 group">
-                                <div className="text-[10px] font-black text-emerald-400 mb-2 uppercase tracking-widest">Step 04 (관리자)</div>
-                                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200 group-hover:bg-emerald-100 transition-colors shadow-lg">
-                                    <div className="text-sm font-black text-emerald-700">승인 완료</div>
-                                    <div className="text-[10px] text-emerald-500 mt-1">기전(MEP) 작업 진행</div>
+                                <div className="text-[10px] font-black text-blue-500 mb-2 uppercase tracking-widest">Step 04 (관리자)</div>
+                                <div className="bg-blue-50 p-4 rounded-2xl border border-blue-200 group-hover:bg-blue-100 transition-colors shadow-lg">
+                                    <div className="text-sm font-black text-blue-700">승인 완료</div>
+                                    <div className="text-[10px] text-blue-500 mt-1">기전(MEP) 작업 진행</div>
                                 </div>
                             </div>
                             <ArrowRight className="w-4 h-4 text-slate-300 rotate-90 md:rotate-0" />
+                            {/* [Color Fixed] Cured: Emerald to match BuildingSection */}
                             <div className="flex-1 group">
-                                <div className="text-[10px] font-black text-purple-400 mb-2 uppercase tracking-widest">Step 05</div>
-                                <div className="bg-purple-50 p-4 rounded-2xl border border-purple-200 group-hover:bg-purple-100 transition-colors">
-                                    <div className="text-sm font-black text-purple-700">타설 및 양생</div>
-                                    <div className="text-[10px] text-purple-400 mt-1">콘크리트 타설 진행</div>
+                                <div className="text-[10px] font-black text-emerald-500 mb-2 uppercase tracking-widest">Step 05</div>
+                                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200 group-hover:bg-emerald-100 transition-colors">
+                                    <div className="text-sm font-black text-emerald-700">양생 완료 (Cured)</div>
+                                    <div className="text-[10px] text-emerald-500 mt-1">최종 골조 완성 단계</div>
                                 </div>
                             </div>
                         </div>
                         <div className="mt-6 bg-slate-50 p-4 rounded-2xl text-xs text-slate-500 font-medium flex items-center border border-slate-100">
                             <Zap className="w-4 h-4 text-yellow-500 mr-2" />
                             <span className="text-slate-700 font-bold mr-1">Tip:</span> 
-                            승인 완료 상태에서 다시 한번 클릭하면 기전(MEP) 완료 체크가 가능하며, 이후 타설 단계로 넘어갑니다.
+                            단지배치도에서 '양생완료'된 구간은 에메랄드 색상으로 완료 층수가 표시됩니다.
                         </div>
                     </div>
                 </section>
 
-                 {/* 섹션 3: 고급 기능 */}
+                 {/* 섹션 3: 스마트 인텔리전스 (확장됨) */}
                  <section className="pb-10">
                     <div className="flex items-center space-x-3 mb-6">
-                        <Database className="w-5 h-5 text-brand-primary" />
-                        <h3 className="text-lg font-black text-slate-800 uppercase tracking-widest text-sm">고급 관리 기능 (Advanced)</h3>
+                        <Zap className="w-5 h-5 text-brand-primary" />
+                        <h3 className="text-lg font-black text-slate-800 uppercase tracking-widest text-sm">스마트 인텔리전스 (Smart Intelligence)</h3>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                         <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
+                            <h4 className="font-black text-slate-800 mb-4 flex items-center"><Scan className="w-4 h-4 mr-2 text-brand-primary"/> AI Dead Unit 필터링</h4>
+                            <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                                AI 엔진이 도면을 정밀 분석하여, 구조적으로 존재하지 않는 <strong>'죽은 세대'</strong>를 자동으로 감지하고 공정률 계산 및 지도 표시에서 제외합니다.
+                            </p>
+                            <div className="flex gap-2 text-[10px] font-black uppercase text-slate-400">
+                                <span className="bg-slate-100 px-2 py-1 rounded">Auto Detect</span>
+                                <span className="bg-slate-100 px-2 py-1 rounded">Smart Filter</span>
+                            </div>
+                         </div>
+
+                         <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
+                            <h4 className="font-black text-slate-800 mb-4 flex items-center"><MessageCircle className="w-4 h-4 mr-2 text-blue-400"/> 실시간 소통 및 공유</h4>
+                            <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                                우측 하단 채팅 버튼으로 현장 이슈를 즉시 공유하세요. 승인 완료 및 요청 내역은 <strong>카카오톡/문자</strong>로 작업자에게 바로 전송할 수 있습니다.
+                            </p>
+                            <div className="flex gap-2 text-[10px] font-black uppercase text-slate-400">
+                                <span className="bg-blue-50 text-blue-400 border border-blue-100 px-2 py-1 rounded">Live Chat</span>
+                                <span className="bg-yellow-50 text-yellow-500 border border-yellow-100 px-2 py-1 rounded">Kakao Share</span>
+                            </div>
+                         </div>
+
                          <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
                             <h4 className="font-black text-slate-800 mb-4 flex items-center"><FileJson className="w-4 h-4 mr-2 text-slate-400"/> 데이터 백업 및 복구</h4>
                             <p className="text-xs text-slate-500 leading-relaxed mb-4">
                                 사이드바의 <strong>[Data Safety]</strong> 메뉴를 통해 현재 현장의 모든 진행 상황을 JSON 파일로 내보내거나, 
-                                이전에 저장한 파일로 상태를 되돌릴 수 있습니다. (관리자/제작자 전용)
+                                이전에 저장한 파일로 상태를 되돌릴 수 있습니다.
                             </p>
                             <div className="flex gap-2 text-[10px] font-black uppercase text-slate-400">
                                 <span className="bg-slate-100 px-2 py-1 rounded">Backup.json</span>
                                 <span className="bg-slate-100 px-2 py-1 rounded">Restore Sync</span>
                             </div>
                          </div>
+                         
                          <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
                             <h4 className="font-black text-slate-800 mb-4 flex items-center"><AlertTriangle className="w-4 h-4 mr-2 text-red-400"/> 제작자 전용 일괄 제어</h4>
                             <p className="text-xs text-slate-500 leading-relaxed mb-4">
                                 제작자 모드에서는 사이드바 하단 <strong>[Creator Controls]</strong>를 통해 
                                 DB 구조를 초기화하거나 테스트를 위해 전체 동의 상태를 일괄 변경할 수 있습니다.
-                                <br/><span className="text-red-500 font-bold">* 데이터 손실 주의</span>
                             </p>
                             <div className="flex gap-2 text-[10px] font-black uppercase text-slate-400">
                                 <span className="bg-red-50 text-red-400 border border-red-100 px-2 py-1 rounded">Reset All</span>
@@ -248,7 +273,7 @@ const Manual: React.FC<ManualProps> = ({ onClose }) => {
                                         <Smartphone className="w-8 h-8 text-slate-600" />
                                     </div>
                                     <h4 className="font-black text-slate-700">현장 작업자</h4>
-                                    <p className="text-[10px] text-slate-400 mt-1 uppercase">Mobile App Interface</p>
+                                    <p className="text-[10px] text-slate-400 mt-1 uppercase">App Interface & Live Chat</p>
                                     <div className="mt-6 flex items-center space-x-2 text-[9px] font-black text-blue-500">
                                         <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
                                         <span className="whitespace-nowrap">데이터 전송중</span>
@@ -312,7 +337,7 @@ const Manual: React.FC<ManualProps> = ({ onClose }) => {
                                         </div>
                                         <div className="min-w-0">
                                             <h5 className="font-black text-slate-800 text-sm whitespace-nowrap">AI 분석 엔진</h5>
-                                            <p className="text-[10px] text-slate-400 whitespace-nowrap">Gemini 3.0 Engine</p>
+                                            <p className="text-[10px] text-slate-400 whitespace-nowrap">Gemini 3.0 + Dead Unit Logic</p>
                                         </div>
                                     </div>
                                     
@@ -424,14 +449,14 @@ const Manual: React.FC<ManualProps> = ({ onClose }) => {
                                 <Database className="w-5 h-5" />
                             </div>
                             <h5 className="font-black text-slate-800 text-xs">NoSQL DB</h5>
-                            <p className="text-[9px] text-slate-400 mt-1 leading-tight">Firestore 기반의<br/>실시간 양방향 동기화</p>
+                            <p className="text-[9px] text-slate-400 mt-1 leading-tight">Firestore Persistence<br/>실시간/오프라인 동기화</p>
                         </div>
                         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg transition-all group">
                             <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center mb-3 group-hover:bg-indigo-500 group-hover:text-white transition-all">
                                 <Zap className="w-5 h-5" />
                             </div>
                             <h5 className="font-black text-slate-800 text-xs">Gemini AI</h5>
-                            <p className="text-[9px] text-slate-400 mt-1 leading-tight">LLM 기반의<br/>도면 해석 및 자동화</p>
+                            <p className="text-[9px] text-slate-400 mt-1 leading-tight">도면 정밀 해석 및<br/>죽은 세대(Dead Unit) 필터링</p>
                         </div>
                         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg transition-all group">
                             <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center mb-3 group-hover:bg-emerald-500 group-hover:text-white transition-all">
@@ -461,7 +486,7 @@ const Manual: React.FC<ManualProps> = ({ onClose }) => {
                                 <div className="w-8 h-8 bg-slate-700 rounded-xl flex items-center justify-center font-black text-xs">02</div>
                                 <div>
                                     <div className="text-xs font-black text-white">클라우드 병합</div>
-                                    <div className="text-[9px] text-slate-400 mt-0.5 whitespace-nowrap">데이터 원장 실시간 동기화</div>
+                                    <div className="text-[9px] text-slate-400 mt-0.5 whitespace-nowrap">유효 세대 판별 및 동기화</div>
                                 </div>
                             </div>
                             <div className="flex items-center space-x-4 bg-white/5 p-5 rounded-2xl border border-white/10">

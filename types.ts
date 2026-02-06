@@ -60,7 +60,8 @@ export interface RiskFactor {
   detail: string;
 }
 
-export interface Notification {
+// [중요] 브라우저 내장 Notification 객체와 충돌 방지를 위해 SystemNotification으로 명명
+export interface SystemNotification {
   id: string;
   message: string;
   type: 'success' | 'warning' | 'info';
@@ -68,7 +69,7 @@ export interface Notification {
   read: boolean;
 }
 
-// [추가됨] 실시간 채팅 메시지 타입
+// 실시간 채팅 메시지 타입
 export interface ChatMessage {
   id: string;
   text: string;

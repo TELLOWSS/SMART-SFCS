@@ -40,7 +40,8 @@ import {
   MessageCircle,
   CheckCircle2
 } from 'lucide-react';
-import { Building, ProcessStatus, UserRole, Notification, AnalysisResult, BuildingStructure, Floor, Unit } from './types';
+// [중요] Notification이 아닌 SystemNotification을 가져옵니다.
+import { Building, ProcessStatus, UserRole, SystemNotification, AnalysisResult, BuildingStructure, Floor, Unit } from './types';
 import BuildingSection from './components/BuildingSection';
 import SiteMap from './components/SiteMap';
 import AnalysisView from './components/AnalysisView';
@@ -305,7 +306,7 @@ const App: React.FC = () => {
   const [siteName, setSiteName] = useState("용인 푸르지오 원클러스터 2,3단지 현장");
   const [projectCode, setProjectCode] = useState("PRJ-YG-2025-PREMIUM");
   const [buildings, setBuildings] = useState<Building[]>(generateInitialBuildings());
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<SystemNotification[]>([]); // [수정] 타입 사용
   const [isNotificationSidebarOpen, setIsNotificationSidebarOpen] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -740,7 +741,7 @@ const App: React.FC = () => {
     setStatusModal(null);
   };
 
-  const addNotification = (msg: string, type: Notification['type']) => {
+  const addNotification = (msg: string, type: SystemNotification['type']) => {
     setNotifications(prev => [{ id: Date.now().toString(), message: msg, type, timestamp: '방금 전', read: false }, ...prev]);
   };
 
