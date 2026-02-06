@@ -352,7 +352,6 @@ const App: React.FC = () => {
             
             if (serverBuildings.length > 0) {
                 // [핵심] 변경 사항 감지 및 팝업 알림 트리거 로직
-                // 최초 로드 시(이전 데이터가 없음)에는 알림을 띄우지 않음
                 if (prevBuildingsRef.current.length > 0) {
                     serverBuildings.forEach(newB => {
                         const oldB = prevBuildingsRef.current.find(b => b.id === newB.id);
@@ -378,7 +377,6 @@ const App: React.FC = () => {
                                             read: false 
                                         }, ...prev]);
                                         
-                                        // [시스템 알림 & 소리] 백그라운드에서도 인지 가능하도록 호출
                                         notifySystem(
                                           'SFCS 승인 요청 알림', 
                                           `${newB.name} ${newF.level}층 ${newU.unitNumber}호에서 검측 승인이 요청되었습니다.`
@@ -686,56 +684,77 @@ const App: React.FC = () => {
     e.target.value = ''; 
   };
 
+  // [수정] 불변성을 지키는 업데이트 로직 (렌더링 이슈 해결의 핵심)
   const handleMepUpdate = (bId: string, floorLevel: number, unitId: string, completed: boolean) => {
-    const bIdx = buildings.findIndex(b => b.id === bId);
-    if (bIdx === -1) return;
-    
-    const newBuildings = [...buildings];
-    const floorIdx = newBuildings[bIdx].floors.findIndex(f => f.level === floorLevel);
-    const unitIdx = newBuildings[bIdx].floors[floorIdx].units.findIndex(u => u.id === unitId);
-    const targetUnit = newBuildings[bIdx].floors[floorIdx].units[unitIdx];
+    const newBuildings = buildings.map(b => {
+        if (b.id !== bId) return b;
+        return {
+            ...b,
+            floors: b.floors.map(f => {
+                if (f.level !== floorLevel) return f;
+                return {
+                    ...f,
+                    units: f.units.map(u => {
+                        if (u.id !== unitId) return u;
+                        return { ...u, mepCompleted: completed, lastUpdated: new Date().toISOString() };
+                    })
+                };
+            })
+        };
+    });
 
-    targetUnit.mepCompleted = completed;
     setBuildings(newBuildings);
-    saveBuilding(newBuildings[bIdx]);
-
-    if (completed) {
-        // 내 작업에 대한 알림
-        // addNotification(`[기전 완료] ${newBuildings[bIdx].name} ${floorLevel}F ${targetUnit.unitNumber}호 전기/설비 작업 완료. 타설 준비 가능.`, 'success');
-    }
+    const updatedBuilding = newBuildings.find(b => b.id === bId);
+    if (updatedBuilding) saveBuilding(updatedBuilding);
   };
 
+  // [수정] 불변성을 지키는 업데이트 로직 (렌더링 이슈 해결의 핵심)
   const handleStatusUpdate = (bId: string, floorLevel: number, unitId: string, newStatus: ProcessStatus) => {
-    const bIdx = buildings.findIndex(b => b.id === bId);
-    if (bIdx === -1) return;
+    let targetUnitNumber = "";
+
+    const newBuildings = buildings.map(b => {
+        if (b.id !== bId) return b;
+        return {
+            ...b,
+            floors: b.floors.map(f => {
+                if (f.level !== floorLevel) return f;
+                return {
+                    ...f,
+                    units: f.units.map(u => {
+                        if (u.id !== unitId) return u;
+                        targetUnitNumber = u.unitNumber;
+                        return { ...u, status: newStatus, lastUpdated: new Date().toISOString() };
+                    })
+                };
+            })
+        };
+    });
     
-    const newBuildings = [...buildings];
-    const floorIdx = newBuildings[bIdx].floors.findIndex(f => f.level === floorLevel);
-    const unitIdx = newBuildings[bIdx].floors[floorIdx].units.findIndex(u => u.id === unitId);
-    const targetUnit = newBuildings[bIdx].floors[floorIdx].units[unitIdx];
-    
-    targetUnit.status = newStatus;
+    // 1. 로컬 상태 즉시 반영 (낙관적 업데이트)
     setBuildings(newBuildings);
-    saveBuilding(newBuildings[bIdx]);
     
-    // [자동화] 상태 변경에 따른 채팅 알림 전송 (작업자 요청 or 관리자 승인)
-    if (newStatus === ProcessStatus.APPROVAL_REQ) {
-        addNotification(`서버로 요청 전송 완료. (${targetUnit.unitNumber}호)`, 'info');
-        // 승인 요청 메시지 자동 전송
-        sendChatMessage({
-            text: `📢 [승인요청] ${newBuildings[bIdx].name} ${floorLevel}층 ${targetUnit.unitNumber}호 - 검측 요청합니다.`,
-            userRole: currentUserRole,
-            timestamp: Date.now(),
-            senderName: '현장 알림'
-        });
-    } else if (newStatus === ProcessStatus.APPROVED) {
-        // 승인 완료 메시지 자동 전송
-        sendChatMessage({
-            text: `✅ [승인완료] ${newBuildings[bIdx].name} ${floorLevel}층 ${targetUnit.unitNumber}호 - 승인 완료. 후속 공정 진행하세요.`,
-            userRole: currentUserRole,
-            timestamp: Date.now(),
-            senderName: '관리자 알림'
-        });
+    // 2. DB 저장
+    const updatedBuilding = newBuildings.find(b => b.id === bId);
+    if (updatedBuilding) {
+        saveBuilding(updatedBuilding);
+        
+        // 3. 메시지 자동 전송
+        if (newStatus === ProcessStatus.APPROVAL_REQ) {
+            addNotification(`서버로 요청 전송 완료. (${targetUnitNumber}호)`, 'info');
+            sendChatMessage({
+                text: `📢 [승인요청] ${updatedBuilding.name} ${floorLevel}층 ${targetUnitNumber}호 - 검측 요청합니다.`,
+                userRole: currentUserRole,
+                timestamp: Date.now(),
+                senderName: '현장 알림'
+            });
+        } else if (newStatus === ProcessStatus.APPROVED) {
+            sendChatMessage({
+                text: `✅ [승인완료] ${updatedBuilding.name} ${floorLevel}층 ${targetUnitNumber}호 - 승인 완료. 후속 공정 진행하세요.`,
+                userRole: currentUserRole,
+                timestamp: Date.now(),
+                senderName: '관리자 알림'
+            });
+        }
     }
     
     setStatusModal(null);
