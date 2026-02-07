@@ -723,7 +723,13 @@ const App: React.FC = () => {
                     units: f.units.map(u => {
                         if (u.id !== unitId) return u;
                         targetUnitNumber = u.unitNumber;
-                        return { ...u, status: newStatus, lastUpdated: new Date().toISOString() };
+
+                        // [핵심 수정] 이전 단계로 돌아가면(Reset/Install/Request) 기전(MEP) 완료 상태를 초기화
+                        // 이렇게 하면 승인 시 '타설준비완료'가 아닌 '기전작업요망'부터 정상 시작됨
+                        const shouldResetMep = [ProcessStatus.NOT_STARTED, ProcessStatus.INSTALLING, ProcessStatus.APPROVAL_REQ].includes(newStatus);
+                        const nextMep = shouldResetMep ? false : u.mepCompleted;
+
+                        return { ...u, status: newStatus, mepCompleted: nextMep, lastUpdated: new Date().toISOString() };
                     })
                 };
             })

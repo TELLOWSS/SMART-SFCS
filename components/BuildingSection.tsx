@@ -164,8 +164,7 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
             <div className={`flex-1 grid gap-2 md:gap-3 min-w-0 w-full max-w-full ${getGridCols(floor.units.length)}`}>
               {floor.units.map((unit) => (
                   <button 
-                    // [핵심 수정] 상태가 변하면 Key도 변하게 하여 React가 요소를 강제로 새로 그리도록 유도 (스타일 즉시 반영)
-                    // Date.now()를 뺐기 때문에 클릭 이벤트 먹통 현상은 발생하지 않습니다.
+                    // 상태가 변하면 Key도 변하게 하여 React가 요소를 강제로 새로 그리도록 유도
                     key={`${unit.id}-${unit.status}`}
                     onClick={() => handleAction(floor.level, unit.id, unit.status, !!unit.isDeadUnit, unit.mepCompleted)}
                     disabled={!!unit.isDeadUnit}
@@ -192,8 +191,9 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
                       <div className="flex-1 min-w-0 overflow-hidden mr-1">
                          <span className="text-[10px] md:text-[11px] font-black uppercase truncate block w-full">
                            {unit.isDeadUnit ? '비활성' : (
-                              unit.status === ProcessStatus.APPROVED && !unit.mepCompleted ? '기전작업요망' :
-                              unit.status === ProcessStatus.APPROVED && unit.mepCompleted ? '타설준비완료' :
+                              // [수정] 승인완료 시 '승인완료 (기전요망)' 또는 '승인완료 (타설준비)'로 명시하여 알림 문구와 일치시킴
+                              unit.status === ProcessStatus.APPROVED ? 
+                                (unit.mepCompleted ? '승인완료 (타설준비)' : '승인완료 (기전요망)') :
                               unit.status
                            )}
                          </span>
