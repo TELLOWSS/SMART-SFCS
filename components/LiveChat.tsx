@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, MessageCircle, X, User, Shield, Hammer } from 'lucide-react';
-import { subscribeToChat, sendChatMessage } from '../services/firebaseService';
+import { Send, MessageCircle, X, User, Shield, Hammer, Trash2 } from 'lucide-react';
+import { subscribeToChat, sendChatMessage, clearChatMessages } from '../services/firebaseService';
 import { ChatMessage, UserRole } from '../types';
 
 interface LiveChatProps {
@@ -46,6 +46,12 @@ const LiveChat: React.FC<LiveChatProps> = ({ currentUserRole, isOpen, onClose })
     await sendChatMessage(newMsg);
   };
 
+  const handleClearChat = async () => {
+    if (window.confirm("정말 채팅 내역을 모두 삭제하시겠습니까?\n(모든 사용자의 대화 내용이 영구적으로 삭제됩니다)")) {
+        await clearChatMessages();
+    }
+  };
+
   const getRoleIcon = (role: UserRole) => {
       switch(role) {
           case UserRole.ADMIN: return <Shield className="w-3 h-3 text-blue-400" />;
@@ -72,9 +78,20 @@ const LiveChat: React.FC<LiveChatProps> = ({ currentUserRole, isOpen, onClose })
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
             <h3 className="font-black text-white text-sm">현장 실시간 소통</h3>
         </div>
-        <button onClick={onClose} className="p-1 hover:bg-slate-800 rounded-full transition-colors">
-            <X className="w-5 h-5 text-slate-400" />
-        </button>
+        <div className="flex items-center gap-2">
+            {(currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR) && (
+                <button 
+                    onClick={handleClearChat} 
+                    className="p-1.5 hover:bg-red-500/10 rounded-full transition-colors group"
+                    title="대화 내용 전체 삭제"
+                >
+                    <Trash2 className="w-4 h-4 text-slate-500 group-hover:text-red-500 transition-colors" />
+                </button>
+            )}
+            <button onClick={onClose} className="p-1 hover:bg-slate-800 rounded-full transition-colors">
+                <X className="w-5 h-5 text-slate-400" />
+            </button>
+        </div>
       </div>
 
       {/* Messages Area */}

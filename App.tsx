@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   LayoutDashboard, 
@@ -29,7 +30,8 @@ import {
   AlertTriangle,
   Share2,
   History,
-  Lock
+  Lock,
+  ThumbsDown // [New] Icon for Reject
 } from 'lucide-react';
 // [중요] Notification이 아닌 SystemNotification을 가져옵니다.
 import { Building, ProcessStatus, UserRole, SystemNotification, AnalysisResult, BuildingStructure, Floor, Unit } from './types';
@@ -382,6 +384,20 @@ const App: React.FC = () => {
                                               `${newB.name} ${newF.level}층 ${newU.unitNumber}호가 승인되었습니다.`
                                             );
                                         }
+                                        // 3. 승인 반려 (설치중으로 회귀) 시 - 작업자에게 알림
+                                        else if (newU.status === ProcessStatus.INSTALLING && oldU.status === ProcessStatus.APPROVAL_REQ) {
+                                            newNotifications.push({ 
+                                                id: Date.now().toString() + Math.random(), 
+                                                message: `[승인반려] ${newB.name} ${newF.level}층 ${newU.unitNumber}호`, 
+                                                type: 'warning', 
+                                                timestamp: '방금 전', 
+                                                read: false 
+                                            });
+                                            notifySystem(
+                                              'SFCS 승인 반려 알림',
+                                              `${newB.name} ${newF.level}층 ${newU.unitNumber}호가 반려되었습니다. 보완 후 재요청바랍니다.`
+                                            );
+                                        }
                                     }
                                 });
                             });
@@ -702,6 +718,8 @@ const App: React.FC = () => {
 
   const handleStatusUpdate = async (bId: string, floorLevel: number, unitId: string, newStatus: ProcessStatus) => {
     let targetUnitNumber = "";
+    // [Reject Logic] 현재 상태가 승인요청이고, 새로운 상태가 설치중(반려)일 경우 감지
+    let isRejection = false;
 
     const newBuildings = buildings.map(b => {
         if (b.id !== bId) return b;
@@ -714,6 +732,11 @@ const App: React.FC = () => {
                     units: f.units.map(u => {
                         if (u.id !== unitId) return u;
                         targetUnitNumber = u.unitNumber;
+                        
+                        // Detect Rejection
+                        if (u.status === ProcessStatus.APPROVAL_REQ && newStatus === ProcessStatus.INSTALLING) {
+                            isRejection = true;
+                        }
 
                         let nextMep = u.mepCompleted;
 
@@ -758,6 +781,14 @@ const App: React.FC = () => {
                 timestamp: Date.now(),
                 senderName: '관리자 알림'
             });
+        } else if (isRejection) {
+            await sendChatMessage({
+                text: `❌ [승인반려] ${updatedBuilding.name} ${floorLevel}층 ${targetUnitNumber}호 - 재작업 및 보완 요망.`,
+                userRole: currentUserRole,
+                timestamp: Date.now(),
+                senderName: '관리자 알림'
+            });
+            addNotification("승인 반려 처리되었습니다.", "warning");
         }
     }
     
@@ -1255,6 +1286,21 @@ const App: React.FC = () => {
 
               <div className="flex space-x-4">
                 <button onClick={() => setStatusModal(null)} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-black text-sm">취소</button>
+                
+                {/* [승인 반려 기능 추가] 관리자이고 현재 승인요청 상태일 때 '반려' 버튼 노출 */}
+                {(currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR) && statusModal.currentStatus === ProcessStatus.APPROVAL_REQ && (
+                   <button 
+                     onClick={() => {
+                        if(window.confirm("승인을 반려하시겠습니까? (상태가 '설치중'으로 변경됩니다)")) {
+                            handleStatusUpdate(statusModal.buildingId, statusModal.floorLevel, statusModal.unitId, ProcessStatus.INSTALLING);
+                        }
+                     }} 
+                     className="flex-1 py-4 bg-red-50 text-red-500 border border-red-100 rounded-2xl font-black text-sm hover:bg-red-100 flex items-center justify-center transition-all"
+                   >
+                     <ThumbsDown className="w-4 h-4 mr-2" /> 승인 반려
+                   </button>
+                )}
+
                 <button onClick={() => handleStatusUpdate(statusModal.buildingId, statusModal.floorLevel, statusModal.unitId, statusModal.nextStatus)} className="flex-1 py-4 bg-brand-primary text-white rounded-2xl font-black text-sm shadow-xl hover:bg-blue-600">업데이트</button>
               </div>
             </div>
