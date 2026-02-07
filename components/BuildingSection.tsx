@@ -33,6 +33,34 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
   const canScrollUp = viewOffset > 0;
   const canScrollDown = viewOffset + VIEW_SIZE < sortedFloors.length;
 
+  // [공구 구분 헬퍼 함수]
+  const getZoneInfo = (buildingName: string) => {
+    const num = parseInt(buildingName.replace(/[^0-9]/g, ''));
+    // 2공구: 2006~2010, 3001~3003
+    const isZone2 = [2006, 2007, 2008, 2009, 2010, 3001, 3002, 3003].includes(num);
+    
+    if (isZone2) {
+        return { 
+            name: '2공구', 
+            company: '오엔건설', 
+            borderColor: 'border-t-rose-500', // Card Top Border
+            badgeBg: 'bg-rose-50', 
+            badgeText: 'text-rose-600',
+            badgeBorder: 'border-rose-100'
+        };
+    }
+    return { 
+        name: '1공구', 
+        company: '휘강건설', 
+        borderColor: 'border-t-indigo-500', // Card Top Border
+        badgeBg: 'bg-indigo-50', 
+        badgeText: 'text-indigo-600',
+        badgeBorder: 'border-indigo-100'
+    };
+  };
+
+  const zone = getZoneInfo(building.name);
+
   const getActiveFloorIndex = () => {
       const idx = sortedFloors.findIndex(f => 
           f.units.some(u => !u.isDeadUnit && u.status !== ProcessStatus.NOT_STARTED)
@@ -124,10 +152,17 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-tech border border-slate-200 flex flex-col h-full overflow-hidden transition-all hover:shadow-xl">
-      <div className="bg-slate-50 px-4 py-3.5 border-b border-slate-200 flex justify-between items-center">
+    // [디자인 수정] 상단에 공구별 색상 라인 추가 (border-t-[4px])
+    <div className={`bg-white rounded-2xl shadow-tech border border-slate-200 border-t-[4px] ${zone.borderColor} flex flex-col h-full overflow-hidden transition-all hover:shadow-xl`}>
+      <div className="bg-slate-50 px-4 py-3.5 border-b border-slate-200 flex justify-between items-start">
         <div className="flex flex-col">
-          <h3 className="font-black text-slate-800 font-mono tracking-tight text-base">{building.name}</h3>
+          <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-black text-slate-800 font-mono tracking-tight text-base">{building.name}</h3>
+              {/* [디자인 수정] 공구/건설사 배지 추가 */}
+              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border ${zone.badgeBg} ${zone.badgeText} ${zone.badgeBorder}`}>
+                  {zone.name} | {zone.company}
+              </span>
+          </div>
           {pendingRequests.length > 0 && (
               <button 
                 onClick={jumpToFirstPending}
@@ -164,9 +199,7 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
             <div className={`flex-1 grid gap-2 md:gap-3 min-w-0 w-full max-w-full ${getGridCols(floor.units.length)}`}>
               {floor.units.map((unit) => (
                   <button 
-                    // [핵심 수정] React Key에 'mepCompleted'를 추가하여 텍스트/상태 변경 시 컴포넌트가 확실하게 리렌더링되도록 보장
-                    // status가 같아도 mepCompleted가 변경되면(예: 기전작업요망 -> 타설준비) 버튼을 새로 그려야 함
-                    key={`${unit.id}-${unit.status}-${unit.mepCompleted}`}
+                    key={`${unit.id}-${unit.status}-${unit.mepCompleted}-${unit.lastUpdated}`}
                     onClick={() => handleAction(floor.level, unit.id, unit.status, !!unit.isDeadUnit, unit.mepCompleted)}
                     disabled={!!unit.isDeadUnit}
                     className={`relative p-2 md:p-3 rounded-xl border-l-[4px] text-left transition-all active:scale-95 shadow-sm flex flex-col justify-between h-20 md:h-24 overflow-hidden w-full max-w-full min-w-0 ${

@@ -709,7 +709,7 @@ const App: React.FC = () => {
   };
 
   // [수정] 불변성을 지키는 업데이트 로직 (렌더링 이슈 해결의 핵심)
-  const handleStatusUpdate = (bId: string, floorLevel: number, unitId: string, newStatus: ProcessStatus) => {
+  const handleStatusUpdate = async (bId: string, floorLevel: number, unitId: string, newStatus: ProcessStatus) => {
     let targetUnitNumber = "";
 
     const newBuildings = buildings.map(b => {
@@ -751,17 +751,17 @@ const App: React.FC = () => {
     if (updatedBuilding) {
         saveBuilding(updatedBuilding);
         
-        // 3. 메시지 자동 전송
+        // 3. 메시지 자동 전송 (Await applied)
         if (newStatus === ProcessStatus.APPROVAL_REQ) {
             addNotification(`서버로 요청 전송 완료. (${targetUnitNumber}호)`, 'info');
-            sendChatMessage({
+            await sendChatMessage({
                 text: `📢 [승인요청] ${updatedBuilding.name} ${floorLevel}층 ${targetUnitNumber}호 - 검측 요청합니다.`,
                 userRole: currentUserRole,
                 timestamp: Date.now(),
                 senderName: '현장 알림'
             });
         } else if (newStatus === ProcessStatus.APPROVED) {
-            sendChatMessage({
+            await sendChatMessage({
                 text: `✅ [승인완료] ${updatedBuilding.name} ${floorLevel}층 ${targetUnitNumber}호 - 승인 완료. 후속 공정 진행하세요.`,
                 userRole: currentUserRole,
                 timestamp: Date.now(),
