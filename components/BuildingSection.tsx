@@ -164,8 +164,9 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
             <div className={`flex-1 grid gap-2 md:gap-3 min-w-0 w-full max-w-full ${getGridCols(floor.units.length)}`}>
               {floor.units.map((unit) => (
                   <button 
-                    // 상태가 변하면 Key도 변하게 하여 React가 요소를 강제로 새로 그리도록 유도
-                    key={`${unit.id}-${unit.status}`}
+                    // [핵심 수정] React Key에 'mepCompleted'를 추가하여 텍스트/상태 변경 시 컴포넌트가 확실하게 리렌더링되도록 보장
+                    // status가 같아도 mepCompleted가 변경되면(예: 기전작업요망 -> 타설준비) 버튼을 새로 그려야 함
+                    key={`${unit.id}-${unit.status}-${unit.mepCompleted}`}
                     onClick={() => handleAction(floor.level, unit.id, unit.status, !!unit.isDeadUnit, unit.mepCompleted)}
                     disabled={!!unit.isDeadUnit}
                     className={`relative p-2 md:p-3 rounded-xl border-l-[4px] text-left transition-all active:scale-95 shadow-sm flex flex-col justify-between h-20 md:h-24 overflow-hidden w-full max-w-full min-w-0 ${
@@ -191,7 +192,6 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
                       <div className="flex-1 min-w-0 overflow-hidden mr-1">
                          <span className="text-[10px] md:text-[11px] font-black uppercase truncate block w-full">
                            {unit.isDeadUnit ? '비활성' : (
-                              // [수정] 승인완료 시 '승인완료 (기전요망)' 또는 '승인완료 (타설준비)'로 명시하여 알림 문구와 일치시킴
                               unit.status === ProcessStatus.APPROVED ? 
                                 (unit.mepCompleted ? '승인완료 (타설준비)' : '승인완료 (기전요망)') :
                               unit.status

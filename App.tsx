@@ -724,10 +724,17 @@ const App: React.FC = () => {
                         if (u.id !== unitId) return u;
                         targetUnitNumber = u.unitNumber;
 
-                        // [핵심 수정] 이전 단계로 돌아가면(Reset/Install/Request) 기전(MEP) 완료 상태를 초기화
-                        // 이렇게 하면 승인 시 '타설준비완료'가 아닌 '기전작업요망'부터 정상 시작됨
-                        const shouldResetMep = [ProcessStatus.NOT_STARTED, ProcessStatus.INSTALLING, ProcessStatus.APPROVAL_REQ].includes(newStatus);
-                        const nextMep = shouldResetMep ? false : u.mepCompleted;
+                        let nextMep = u.mepCompleted;
+
+                        // [핵심] 이전 단계(미착수, 설치중, 승인요청)로 돌아가거나
+                        // [추가] 승인요청 -> 승인완료로 넘어가는 순간에는 기전(MEP) 상태를 '미완료(False)'로 초기화합니다.
+                        // 이렇게 해야 '타설준비완료'가 아닌 '기전작업요망'부터 정상적으로 시작됩니다.
+                        if ([ProcessStatus.NOT_STARTED, ProcessStatus.INSTALLING, ProcessStatus.APPROVAL_REQ].includes(newStatus)) {
+                            nextMep = false;
+                        } 
+                        else if (newStatus === ProcessStatus.APPROVED && u.status === ProcessStatus.APPROVAL_REQ) {
+                            nextMep = false;
+                        }
 
                         return { ...u, status: newStatus, mepCompleted: nextMep, lastUpdated: new Date().toISOString() };
                     })
