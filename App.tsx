@@ -1,44 +1,35 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   LayoutDashboard, 
-  Map as MapIcon, 
-  FileText, 
-  Bell, 
-  ShieldCheck, 
-  Activity,
-  Menu,
-  ChevronUp as ArrowUp,
-  Lock,
-  X,
-  Share2,
-  Search,
-  Monitor,
-  ArrowRight,
-  Check,
-  Zap,
-  Handshake,
-  Trash2,
-  ChevronRight,
-  UserCheck,
+  CheckCircle2,
   Cpu,
-  Award,
-  Building as BuildingIcon,
-  AlertTriangle,
-  Send,
-  RotateCcw,
+  X,
+  Map as MapIcon,
+  FileText,
   Save,
-  History,
-  Settings,
-  CloudSun,
-  RefreshCw,
+  RotateCcw,
   Database,
-  Play,
+  Activity,
+  Award,
+  ChevronRight,
+  Menu,
+  Handshake,
+  Bell,
   Wifi,
   WifiOff,
+  CloudSun,
   AlertOctagon,
+  Zap,
+  Search,
+  ArrowUp,
   MessageCircle,
-  CheckCircle2
+  Check,
+  Building as BuildingIcon,
+  ArrowRight,
+  AlertTriangle,
+  Share2,
+  History,
+  Lock
 } from 'lucide-react';
 // [중요] Notification이 아닌 SystemNotification을 가져옵니다.
 import { Building, ProcessStatus, UserRole, SystemNotification, AnalysisResult, BuildingStructure, Floor, Unit } from './types';
@@ -59,7 +50,6 @@ import {
     saveAnalysisResult 
 } from './services/firebaseService';
 
-// 전역 상태 변경 모달을 위한 타입
 interface StatusModalData {
   buildingId: string;
   buildingName: string;
@@ -71,7 +61,6 @@ interface StatusModalData {
   isRevert: boolean;
 }
 
-// 정확한 단지 구성을 위한 설정 타입 정의
 interface DeadRule {
   min: number;
   max: number;
@@ -86,7 +75,6 @@ interface BuildingConfig {
   dead: DeadRule[];
 }
 
-// 입면도 기반 정밀 데이터 설정 (2001~2013동 + 3001~3003동)
 const BUILDING_CONFIGS: BuildingConfig[] = [
   { 
     id: '2001', name: '2001동', floors: 23, unitsPerFloor: 4, 
@@ -207,7 +195,6 @@ const BUILDING_CONFIGS: BuildingConfig[] = [
   }
 ];
 
-// 단지 구조 생성기 (AI 분석용) - 기존 유지
 const createBuildingsFromStructure = (structures: BuildingStructure[]): Building[] => {
   return structures.map((s, idx) => {
     const floors = [];
@@ -242,14 +229,12 @@ const createBuildingsFromStructure = (structures: BuildingStructure[]): Building
   });
 };
 
-// 정밀 설정 기반 초기 데이터 생성
 const generateInitialBuildings = (): Building[] => {
   return BUILDING_CONFIGS.map(config => {
     const floors = [];
     for (let i = 1; i <= config.floors; i++) {
       const units = [];
       for (let u = 1; u <= config.unitsPerFloor; u++) {
-        // 해당 층(i)과 호(u)가 Dead Rule에 포함되는지 확인
         const isDead = config.dead.some(rule => 
           i >= rule.min && i <= rule.max && rule.units.includes(u)
         );
@@ -269,9 +254,7 @@ const generateInitialBuildings = (): Building[] => {
   });
 };
 
-// [System Notification Helper] 브라우저 알림 및 소리 재생 함수
 const notifySystem = (title: string, body: string, soundUrl: string = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3') => {
-  // 1. 오디오 재생 (사용자 인터랙션 이후에만 동작할 수 있음)
   try {
     const audio = new Audio(soundUrl);
     audio.volume = 0.5;
@@ -280,7 +263,6 @@ const notifySystem = (title: string, body: string, soundUrl: string = 'https://a
     console.error('Sound error:', e);
   }
 
-  // 2. 시스템 알림 (브라우저가 백그라운드일 때 유용)
   if (!("Notification" in window)) {
     return;
   }
@@ -351,60 +333,71 @@ const App: React.FC = () => {
             setConnectionError(null); // 성공 시 에러 초기화
             
             if (serverBuildings.length > 0) {
-                // [핵심] 변경 사항 감지 및 팝업 알림 트리거 로직
-                if (prevBuildingsRef.current.length > 0) {
-                    serverBuildings.forEach(newB => {
-                        const oldB = prevBuildingsRef.current.find(b => b.id === newB.id);
-                        if (!oldB) return;
+                // [핵심 Fix] 알림 처리 중 에러가 발생해도 화면 갱신(setBuildings)이 누락되지 않도록 방어 코드 추가
+                try {
+                    if (prevBuildingsRef.current.length > 0) {
+                        const newNotifications: SystemNotification[] = [];
 
-                        newB.floors.forEach(newF => {
-                            const oldF = oldB.floors.find(f => f.level === newF.level);
-                            if (!oldF) return;
+                        serverBuildings.forEach(newB => {
+                            const oldB = prevBuildingsRef.current.find(b => b.id === newB.id);
+                            if (!oldB) return;
 
-                            newF.units.forEach(newU => {
-                                const oldU = oldF.units.find(u => u.id === newU.id);
-                                if (!oldU) return;
+                            newB.floors.forEach(newF => {
+                                const oldF = oldB.floors.find(f => f.level === newF.level);
+                                if (!oldF) return;
 
-                                // 감시: 상태가 변경되었는가?
-                                if (newU.status !== oldU.status) {
-                                    // 1. 승인 요청 발생 시 (타인이 요청했을 때)
-                                    if (newU.status === ProcessStatus.APPROVAL_REQ) {
-                                        setNotifications(prev => [{ 
-                                            id: Date.now().toString(), 
-                                            message: `[승인요청] ${newB.name} ${newF.level}층 ${newU.unitNumber}호`, 
-                                            type: 'warning', 
-                                            timestamp: '방금 전', 
-                                            read: false 
-                                        }, ...prev]);
-                                        
-                                        notifySystem(
-                                          'SFCS 승인 요청 알림', 
-                                          `${newB.name} ${newF.level}층 ${newU.unitNumber}호에서 검측 승인이 요청되었습니다.`
-                                        );
+                                newF.units.forEach(newU => {
+                                    const oldU = oldF.units.find(u => u.id === newU.id);
+                                    if (!oldU) return;
+
+                                    // 감시: 상태가 변경되었는가?
+                                    if (newU.status !== oldU.status) {
+                                        // 1. 승인 요청 발생 시 (타인이 요청했을 때)
+                                        if (newU.status === ProcessStatus.APPROVAL_REQ) {
+                                            newNotifications.push({ 
+                                                id: Date.now().toString() + Math.random(), // ID 중복 방지
+                                                message: `[승인요청] ${newB.name} ${newF.level}층 ${newU.unitNumber}호`, 
+                                                type: 'warning', 
+                                                timestamp: '방금 전', 
+                                                read: false 
+                                            });
+                                            
+                                            notifySystem(
+                                              'SFCS 승인 요청 알림', 
+                                              `${newB.name} ${newF.level}층 ${newU.unitNumber}호에서 검측 승인이 요청되었습니다.`
+                                            );
+                                        }
+                                        // 2. 승인 완료 시
+                                        else if (newU.status === ProcessStatus.APPROVED) {
+                                            newNotifications.push({ 
+                                                id: Date.now().toString() + Math.random(), 
+                                                message: `[승인완료] ${newB.name} ${newF.level}층 ${newU.unitNumber}호`, 
+                                                type: 'success', 
+                                                timestamp: '방금 전', 
+                                                read: false 
+                                            });
+                                            
+                                            notifySystem(
+                                              'SFCS 승인 완료',
+                                              `${newB.name} ${newF.level}층 ${newU.unitNumber}호가 승인되었습니다.`
+                                            );
+                                        }
                                     }
-                                    // 2. 승인 완료 시
-                                    else if (newU.status === ProcessStatus.APPROVED) {
-                                        setNotifications(prev => [{ 
-                                            id: Date.now().toString(), 
-                                            message: `[승인완료] ${newB.name} ${newF.level}층 ${newU.unitNumber}호`, 
-                                            type: 'success', 
-                                            timestamp: '방금 전', 
-                                            read: false 
-                                        }, ...prev]);
-                                        
-                                        notifySystem(
-                                          'SFCS 승인 완료',
-                                          `${newB.name} ${newF.level}층 ${newU.unitNumber}호가 승인되었습니다.`
-                                        );
-                                    }
-                                }
+                                });
                             });
                         });
-                    });
+                        
+                        if (newNotifications.length > 0) {
+                            setNotifications(prev => [...newNotifications, ...prev]);
+                        }
+                    }
+                } catch (e) {
+                    console.error("Notification system error (UI update will proceed):", e);
                 }
 
                 // 현재 상태를 '이전 상태'로 저장
                 prevBuildingsRef.current = serverBuildings;
+                // [UI 업데이트] 무조건 실행 보장
                 setBuildings(serverBuildings);
             }
         },
@@ -428,6 +421,7 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  // ... (Other useEffects remain the same)
   // [신규] 분석 결과 실시간 구독 (모든 사용자)
   useEffect(() => {
     const unsubscribe = subscribeToAnalysisResult((data) => {
@@ -567,7 +561,6 @@ const App: React.FC = () => {
   const handleCreatorBatchAction = async (action: 'RESET' | 'REINIT' | 'INSTALL' | 'REQ' | 'APPROVE' | 'MEP') => {
       if (!window.confirm("선택한 일괄 작업을 수행하시겠습니까? 데이터가 변경됩니다.")) return;
 
-      // [수정] RESET 또는 REINIT 시 채팅 내역도 삭제
       if (action === 'REINIT' || action === 'RESET') {
           await clearChatMessages();
           addNotification("채팅 내역이 초기화되었습니다.", "info");
@@ -684,7 +677,6 @@ const App: React.FC = () => {
     e.target.value = ''; 
   };
 
-  // [수정] 불변성을 지키는 업데이트 로직 (렌더링 이슈 해결의 핵심)
   const handleMepUpdate = (bId: string, floorLevel: number, unitId: string, completed: boolean) => {
     const newBuildings = buildings.map(b => {
         if (b.id !== bId) return b;
@@ -708,7 +700,6 @@ const App: React.FC = () => {
     if (updatedBuilding) saveBuilding(updatedBuilding);
   };
 
-  // [수정] 불변성을 지키는 업데이트 로직 (렌더링 이슈 해결의 핵심)
   const handleStatusUpdate = async (bId: string, floorLevel: number, unitId: string, newStatus: ProcessStatus) => {
     let targetUnitNumber = "";
 
@@ -727,12 +718,12 @@ const App: React.FC = () => {
                         let nextMep = u.mepCompleted;
 
                         // [핵심] 이전 단계(미착수, 설치중, 승인요청)로 돌아가거나
-                        // [추가] 승인요청 -> 승인완료로 넘어가는 순간에는 기전(MEP) 상태를 '미완료(False)'로 초기화합니다.
-                        // 이렇게 해야 '타설준비완료'가 아닌 '기전작업요망'부터 정상적으로 시작됩니다.
+                        // 승인완료(APPROVED) 상태로 진입하는 모든 경우(승인요청->승인, 설치중->강제승인 등)에 
+                        // 기전 작업 상태(MEP)를 False(작업필요)로 초기화합니다.
                         if ([ProcessStatus.NOT_STARTED, ProcessStatus.INSTALLING, ProcessStatus.APPROVAL_REQ].includes(newStatus)) {
                             nextMep = false;
                         } 
-                        else if (newStatus === ProcessStatus.APPROVED && u.status === ProcessStatus.APPROVAL_REQ) {
+                        else if (newStatus === ProcessStatus.APPROVED) {
                             nextMep = false;
                         }
 
@@ -821,7 +812,6 @@ const App: React.FC = () => {
       {isMobileMenuOpen && <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[65] md:hidden" onClick={() => setIsMobileMenuOpen(false)} />}
 
       <aside className={`fixed h-full z-[70] transition-all duration-300 shadow-2xl bg-brand-dark text-white w-64 md:w-72 flex flex-col ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-        {/* Sidebar content remains same */}
         <div className="p-6 border-b border-slate-700 flex justify-between items-center text-brand-primary">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 flex items-center justify-center bg-white rounded-xl shadow-glow"><Cpu className="w-6 h-6 text-brand-dark" /></div>
@@ -952,7 +942,6 @@ const App: React.FC = () => {
         </div>
         
         <header className="relative z-10 p-4 md:p-10 pb-6 text-white w-full">
-          {/* Header content remains same */}
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-6">
               <div className="flex flex-wrap items-center gap-4 md:gap-8">
                   <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 -ml-2 hover:bg-white/10 rounded-xl md:hidden transition-colors"><Menu className="w-7 h-7" /></button>
@@ -1025,7 +1014,7 @@ const App: React.FC = () => {
               )}
           </div>
         </header>
-
+        
         <div className="relative z-10 flex-1 space-y-6 md:space-y-12 px-4 md:px-10 pb-24 w-full max-w-[1440px] mx-auto overflow-x-hidden">
             {activeTab === 'dashboard' && (
               <>
@@ -1064,7 +1053,6 @@ const App: React.FC = () => {
                             <div className="flex items-center justify-between mt-3">
                                <div className="bg-orange-50 text-brand-accent text-[10px] font-black px-3 py-1 rounded-full border border-orange-100">{p.floorLevel}F 요청</div>
                             </div>
-                            {/* [추가됨] 관리자 전용 '바로 승인' 버튼 */}
                             {(currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR) && (
                                 <div className="absolute inset-0 bg-slate-900/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                     <div 
@@ -1178,15 +1166,13 @@ const App: React.FC = () => {
               }} />
             )}
         </div>
-
-        {/* Scroll Top Button */}
+        
         {showScrollTop && (
           <button onClick={scrollToTop} className="fixed bottom-8 right-24 z-[100] w-14 h-14 bg-white text-slate-400 border border-slate-200 rounded-2xl shadow-xl flex items-center justify-center animate-fade-in-up hover:bg-slate-50 transition-all hover:-translate-y-1 active:scale-95 group">
               <ArrowUp className="w-6 h-6" />
           </button>
         )}
 
-        {/* Chat Toggle Button */}
         <button 
             onClick={() => setIsChatOpen(!isChatOpen)} 
             className="fixed bottom-8 right-6 z-[300] w-14 h-14 bg-slate-800 text-white rounded-2xl shadow-2xl flex items-center justify-center animate-fade-in-up hover:bg-slate-700 transition-all hover:-translate-y-1 active:scale-95 group border border-slate-700"
@@ -1194,19 +1180,18 @@ const App: React.FC = () => {
             {isChatOpen ? <X className="w-6 h-6" /> : <MessageCircle className="w-6 h-6" />}
         </button>
 
-        {/* Live Chat Component */}
         <LiveChat currentUserRole={currentUserRole} isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
 
       </main>
-
+      
       <div className="fixed bottom-0 left-0 right-0 md:top-auto md:left-auto md:bottom-6 md:right-6 z-[300] flex flex-col gap-3 pointer-events-none p-4 md:p-0 items-center md:items-end">
         {notifications
-            .filter(n => !n.read && Date.now() - parseInt(n.id) < 5000)
-            .slice(0, 3) // [변경] 최대 3개까지만 표시
+            .filter(n => !n.read && Date.now() - parseInt(n.id.split('.')[0]) < 5000)
+            .slice(0, 3) 
             .map(n => (
           <div 
             key={n.id} 
-            onClick={() => setNotifications(prev => prev.map(p => p.id === n.id ? {...p, read: true} : p))} // [변경] 클릭 시 닫기
+            onClick={() => setNotifications(prev => prev.map(p => p.id === n.id ? {...p, read: true} : p))} 
             className="cursor-pointer hover:bg-slate-50 transition-colors bg-white/90 backdrop-blur-md border border-slate-200 p-4 rounded-2xl shadow-2xl animate-slide-up pointer-events-auto flex items-center gap-3 w-full md:w-auto md:min-w-[300px]"
           >
              {n.type === 'success' ? <Check className="w-5 h-5 text-emerald-500"/> : <Bell className="w-5 h-5 text-orange-500"/>}
