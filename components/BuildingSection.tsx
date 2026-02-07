@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChevronUp, ChevronDown, Check, AlertCircle, Lock, HardHat, MoreHorizontal, Zap, X, ArrowRight, ShieldCheck, AlertTriangle, RotateCcw, Target, Building as BuildingIcon, Share2, Copy, Ghost, Hammer } from 'lucide-react';
 import { Building, Floor, ProcessStatus, UserRole } from '../types';
 
@@ -26,8 +26,10 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
   const VIEW_SIZE = 3; 
   const hasInitializedFocus = useRef(false);
 
-  const sortedFloors = useMemo(() => [...building.floors].sort((a, b) => b.level - a.level), [building.floors]);
+  // 실시간 반영을 위해 렌더링 시마다 즉시 정렬 (메모이제이션 제거)
+  const sortedFloors = [...building.floors].sort((a, b) => b.level - a.level);
   const visibleFloors = sortedFloors.slice(viewOffset, viewOffset + VIEW_SIZE);
+  
   const canScrollUp = viewOffset > 0;
   const canScrollDown = viewOffset + VIEW_SIZE < sortedFloors.length;
 
@@ -40,14 +42,14 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
   };
 
   useEffect(() => {
-    if (!hasInitializedFocus.current) {
+    if (!hasInitializedFocus.current && sortedFloors.length > 0) {
          const activeIndex = getActiveFloorIndex();
          let targetOffset = activeIndex - Math.floor(VIEW_SIZE / 2);
          targetOffset = Math.max(0, Math.min(sortedFloors.length - VIEW_SIZE, targetOffset));
          setViewOffset(targetOffset);
          hasInitializedFocus.current = true;
     }
-  }, [sortedFloors]);
+  }, [building.id]);
 
   useEffect(() => {
     if (jumpToFloor !== undefined) {
@@ -58,16 +60,14 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
        }
        onJumpHandled?.();
     }
-  }, [jumpToFloor, sortedFloors, onJumpHandled]);
+  }, [jumpToFloor, onJumpHandled]);
 
   const handleScroll = (direction: 'up' | 'down') => {
     if (direction === 'up' && canScrollUp) setViewOffset(Math.max(0, viewOffset - VIEW_SIZE));
     else if (direction === 'down' && canScrollDown) setViewOffset(Math.min(sortedFloors.length - VIEW_SIZE, viewOffset + VIEW_SIZE));
   };
 
-  const pendingRequests = useMemo(() => {
-    return building.floors.filter(f => f.units.some(u => u.status === ProcessStatus.APPROVAL_REQ));
-  }, [building.floors]);
+  const pendingRequests = building.floors.filter(f => f.units.some(u => u.status === ProcessStatus.APPROVAL_REQ));
 
   const jumpToFirstPending = () => {
     if (pendingRequests.length > 0) {
@@ -103,6 +103,7 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
              nextStatus = ProcessStatus.APPROVAL_REQ;
         }
     } else {
+      // Worker Logic
       if (currentStatus === ProcessStatus.NOT_STARTED) nextStatus = ProcessStatus.INSTALLING;
       else if (currentStatus === ProcessStatus.INSTALLING) nextStatus = ProcessStatus.APPROVAL_REQ;
       else if (currentStatus === ProcessStatus.APPROVAL_REQ) { nextStatus = ProcessStatus.INSTALLING; isRevert = true; }
@@ -153,26 +154,25 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
 
       <div className="flex-1 relative bg-grid-pattern p-3 md:p-4 space-y-4 min-h-[350px] overflow-y-auto">
         {visibleFloors.map((floor) => (
-          <div key={floor.level} className="flex items-stretch border-b border-slate-200/60 pb-4 last:border-0 last:pb-0">
+          <div key={`${floor.level}-${building.id}`} className="flex items-stretch border-b border-slate-200/60 pb-4 last:border-0 last:pb-0">
             <div className="w-12 md:w-14 shrink-0 flex flex-col justify-center items-center mr-2 md:mr-3 border-r border-slate-200 relative pr-2 md:pr-3">
               <span className="font-mono text-lg md:text-xl font-black text-slate-500">{floor.level}F</span>
               {floor.units.some(u => u.status === ProcessStatus.APPROVAL_REQ) && (
                   <div className="absolute right-[-4px] top-1/2 -translate-y-1/2 w-2 h-2 bg-brand-accent rounded-full animate-ping"></div>
               )}
             </div>
-            {/* [Grid Fix] w-full 및 max-w-full 추가하여 모바일 그리드 확장 방지 */}
             <div className={`flex-1 grid gap-2 md:gap-3 min-w-0 w-full max-w-full ${getGridCols(floor.units.length)}`}>
               {floor.units.map((unit) => (
                   <button 
-                    // [Key Fix] status를 key에 포함시켜 상태 변경 시 강제 리렌더링 유도 (스타일 미적용 방지)
+                    // [핵심 수정] 상태가 변하면 Key도 변하게 하여 React가 요소를 강제로 새로 그리도록 유도 (스타일 즉시 반영)
+                    // Date.now()를 뺐기 때문에 클릭 이벤트 먹통 현상은 발생하지 않습니다.
                     key={`${unit.id}-${unit.status}`}
                     onClick={() => handleAction(floor.level, unit.id, unit.status, !!unit.isDeadUnit, unit.mepCompleted)}
                     disabled={!!unit.isDeadUnit}
-                    // [Layout Fix] max-w-full, overflow-hidden 적용으로 버튼 자체가 늘어나는 것 방지
                     className={`relative p-2 md:p-3 rounded-xl border-l-[4px] text-left transition-all active:scale-95 shadow-sm flex flex-col justify-between h-20 md:h-24 overflow-hidden w-full max-w-full min-w-0 ${
                       unit.isDeadUnit 
                       ? 'bg-slate-100 border-slate-300 opacity-40 grayscale cursor-not-allowed' 
-                      : `bg-white ${STATUS_STYLES[unit.status] || ''}`
+                      : `bg-white ${STATUS_STYLES[unit.status] || 'border-slate-200'}`
                     }`}
                   >
                     <div className="flex justify-between items-start w-full min-w-0 overflow-hidden">
@@ -188,7 +188,6 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
                         )}
                     </div>
                     
-                    {/* [Layout Fix] 하단 텍스트 영역이 아이콘을 밀어내지 않도록 구조 변경 */}
                     <div className="flex items-center justify-between mt-1 z-10 w-full min-w-0 max-w-full overflow-hidden">
                       <div className="flex-1 min-w-0 overflow-hidden mr-1">
                          <span className="text-[10px] md:text-[11px] font-black uppercase truncate block w-full">
