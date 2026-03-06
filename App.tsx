@@ -42,6 +42,7 @@ import Manual from './components/Manual';
 import LiveChat from './components/LiveChat';
 import GangformPTW, { GangformPTWPayload, ApprovalStatus } from './components/GangformPTW';
 import { suggestSitePlan } from './services/geminiService';
+import { insertGangformPtwCompletedRecord } from './services/gangformPtwActions';
 import { 
     syncBuildings, 
     saveBuilding, 
@@ -418,12 +419,22 @@ const App: React.FC = () => {
     return buildings.map((building) => ({
       buildingId: building.id,
       buildingName: building.name,
+      floor: gangformPtwByBuilding[building.id]?.payload?.floor || '-',
       status: (() => {
         const ptwStatus = gangformPtwByBuilding[building.id]?.status;
         if (ptwStatus === 'requested') return '승인 대기';
-        if (ptwStatus === 'approved') return '완료';
+        if (ptwStatus === 'completed') return '작업 완료';
+        if (ptwStatus === 'approved') return '승인 완료';
         if (ptwStatus === 'rejected' || ptwStatus === 'draft') return '진행 전';
         return getBuildingPtwStatus(building);
+      })(),
+      statusEmoji: (() => {
+        const ptwStatus = gangformPtwByBuilding[building.id]?.status;
+        if (ptwStatus === 'requested') return '🟡';
+        if (ptwStatus === 'completed') return '🟢';
+        if (ptwStatus === 'approved') return '🔵';
+        if (getBuildingPtwStatus(building) === '완료') return '🟢';
+        return '⚪';
       })()
     }));
   }, [buildings, gangformPtwByBuilding]);
@@ -1460,9 +1471,17 @@ const App: React.FC = () => {
             )}
             {activeTab === 'ptw' && (
               <section className="bg-gray-50 text-gray-900 rounded-[2rem] border border-slate-200 p-5 md:p-8 space-y-6 animate-fade-in-up">
-                <div>
-                  <h2 className="text-2xl font-black tracking-tight text-gray-900">갱폼 작업허가(PTW)</h2>
-                  <p className="text-sm text-slate-600 mt-1">동별 선택 기반 작업허가 진행 현황 및 승인 관리</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-2xl font-black tracking-tight text-gray-900">갱폼 작업허가(PTW)</h2>
+                    <p className="text-sm text-slate-600 mt-1">동별 선택 기반 작업허가 진행 현황 및 승인 관리</p>
+                  </div>
+                  <a
+                    href="/gangform-ptw/history"
+                    className="inline-flex items-center px-3 py-2 rounded-xl text-xs font-black border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  >
+                    히스토리 대시보드
+                  </a>
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-200 p-4 md:p-5">
@@ -1470,15 +1489,17 @@ const App: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {ptwSummary.map((item) => (
                       <div key={item.buildingId} className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-center justify-between">
-                        <span className="text-sm font-black text-slate-800">{item.buildingName}</span>
+                        <span className="text-sm font-black text-slate-800">{item.buildingName} {item.floor}</span>
                         <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${
-                          item.status === '완료'
+                          item.status === '작업 완료' || item.status === '완료'
                             ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
                             : item.status === '승인 대기'
                             ? 'bg-orange-50 text-orange-600 border-orange-100'
+                          : item.status === '승인 완료'
+                            ? 'bg-blue-50 text-blue-600 border-blue-100'
                             : 'bg-slate-100 text-slate-500 border-slate-200'
                         }`}>
-                          {item.status}
+                          {item.statusEmoji} {item.status}
                         </span>
                       </div>
                     ))}
@@ -1536,6 +1557,39 @@ const App: React.FC = () => {
                           [selectedPtwBuilding.id]: {
                             ...current,
                             status: 'approved',
+                            updatedAt: new Date().toISOString()
+                          }
+                        };
+                        saveGangformPtwData(next as GangformPtwStoredMap);
+                        return next;
+                      });
+                    }}
+                    onComplete={(payload) => {
+                      return insertGangformPtwCompletedRecord(payload).then(() => {
+                        addNotification(`[${selectedPtwBuilding.name} ${payload.floor}] PTW 작업이 완료되었습니다.`, 'success');
+                        setGangformPtwByBuilding(prev => {
+                          const next = {
+                            ...prev,
+                            [selectedPtwBuilding.id]: {
+                              payload,
+                              status: 'completed' as ApprovalStatus,
+                              updatedAt: new Date().toISOString()
+                            }
+                          };
+
+                          saveGangformPtwData(next as GangformPtwStoredMap);
+                          return next;
+                        });
+                      });
+                    }}
+                    onCycleReset={(payload) => {
+                      addNotification(`[${selectedPtwBuilding.name}] ${payload.floor} 인상 준비 사이클을 시작했습니다.`, 'info');
+                      setGangformPtwByBuilding(prev => {
+                        const next = {
+                          ...prev,
+                          [selectedPtwBuilding.id]: {
+                            payload,
+                            status: 'draft' as ApprovalStatus,
                             updatedAt: new Date().toISOString()
                           }
                         };

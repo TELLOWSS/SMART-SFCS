@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { uploadGangformPhoto, type GangformPhotoSlotKey } from '../lib/imageUploadUtil';
 
-export type ApprovalStatus = 'draft' | 'requested' | 'approved' | 'rejected';
+export type ApprovalStatus = 'draft' | 'requested' | 'approved' | 'completed' | 'rejected';
 
 interface EssentialChecks {
   compressiveStrength: number;
@@ -46,6 +46,13 @@ interface GangformPTWWorkerProps {
   initialData?: GangformPTWPayload;
   initialStatus?: ApprovalStatus;
   onSubmit?: (payload: GangformPTWPayload) => Promise<void> | void;
+  onComplete?: (payload: GangformPTWPayload) => Promise<void> | void;
+  onCycleReset?: (payload: GangformPTWPayload) => Promise<void> | void;
+}
+
+interface LocalDraftState {
+  payload: GangformPTWPayload;
+  status: ApprovalStatus;
 }
 
 export const BEFORE_WORK_KEYS = [
@@ -56,6 +63,42 @@ export const BEFORE_WORK_KEYS = [
 ] as const satisfies readonly GangformPhotoSlotKey[];
 
 export const DURING_WORK_KEY = '작업중_안전블럭체결' as const satisfies GangformPhotoSlotKey;
+
+const getLocalStorageKey = (buildingId: string) => `sfcs:gangform-ptw:worker:${buildingId}`;
+
+const readLocalDraft = (key: string): LocalDraftState | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LocalDraftState;
+    if (!parsed?.payload || !parsed?.status) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const writeLocalDraft = (key: string, value: LocalDraftState) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // 저장 실패 시 무시 (스토리지 용량/권한 이슈)
+  }
+};
+
+const clearLocalDraft = (key: string) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // 삭제 실패 시 무시
+  }
+};
 
 const createDefaultPayload = (buildingId: string): GangformPTWPayload => ({
   category: 'GANGFORM_PTW_APPROVAL',
@@ -109,21 +152,43 @@ export const normalizeGangformPayload = (
   };
 };
 
+const parseFloorNumber = (floorText: string): number | null => {
+  const matched = floorText.match(/\d+/);
+  if (!matched) return null;
+  const parsed = Number(matched[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   buildingId,
   initialData,
   initialStatus = 'draft',
-  onSubmit
+  onSubmit,
+  onComplete,
+  onCycleReset
 }) => {
   const [payload, setPayload] = useState<GangformPTWPayload>(normalizeGangformPayload(buildingId, initialData));
   const [status, setStatus] = useState<ApprovalStatus>(initialStatus);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
 
+  const storageKey = useMemo(() => getLocalStorageKey(buildingId), [buildingId]);
+
   useEffect(() => {
+    const localDraft = readLocalDraft(storageKey);
+    if (localDraft) {
+      setPayload(normalizeGangformPayload(buildingId, localDraft.payload));
+      setStatus(localDraft.status);
+      return;
+    }
+
     setPayload(normalizeGangformPayload(buildingId, initialData));
     setStatus(initialStatus);
-  }, [buildingId, initialData, initialStatus]);
+  }, [buildingId, initialData, initialStatus, storageKey]);
+
+  useEffect(() => {
+    writeLocalDraft(storageKey, { payload, status });
+  }, [payload, status, storageKey]);
 
   const compressiveWarning = payload.essentialChecks.compressiveStrength > 0 && payload.essentialChecks.compressiveStrength < 5;
 
@@ -139,6 +204,8 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     payload.essentialChecks.lowerControl &&
     payload.essentialChecks.clearDebris &&
     beforeWorkCompleted;
+
+  const nextFloorNumber = parseFloorNumber(payload.floor)?.valueOf();
 
   const handleStrengthChange = (value: string) => {
     const num = Number(value || 0);
@@ -227,7 +294,6 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
         essentialChecks: payload.essentialChecks,
         photos: payload.requiredPhotos,
         status: 'PENDING' as const,
-        // 서버 insert 시 DB 함수(now()/CURRENT_TIMESTAMP)로 채워질 필드
         requestedAtServer: null as string | null,
         requestedAtClient: new Date().toISOString()
       };
@@ -243,6 +309,40 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const markAsCompleted = async () => {
+    if (!payload.requiredPhotos.duringWork.작업중_안전블럭체결 || isSubmitting) return;
+
+    try {
+      setIsSubmitting(true);
+      if (!onComplete) {
+        throw new Error('완료 기록 DB 저장 함수가 연결되지 않았습니다.');
+      }
+      await onComplete?.(payload);
+      setStatus('completed');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '완료 기록 저장 실패');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const prepareNextFloorCycle = async () => {
+    const currentFloor = parseFloorNumber(payload.floor);
+    const nextFloor = (currentFloor ?? 0) + 1;
+
+    const nextPayload: GangformPTWPayload = {
+      ...createDefaultPayload(payload.building || buildingId),
+      building: payload.building || buildingId,
+      floor: `${nextFloor}층`
+    };
+
+    clearLocalDraft(storageKey);
+    setPayload(nextPayload);
+    setStatus('draft');
+
+    await onCycleReset?.(nextPayload);
   };
 
   return (
@@ -340,7 +440,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
                   />
                 </label>
 
-                <div className="mt-2 aspect-square w-full rounded-lg border border-slate-200 bg-gray-100 overflow-hidden flex items-center justify-center">
+                <div className="mt-2 w-full h-48 md:h-64 object-contain bg-gray-100 rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center">
                   {url ? (
                     <img src={url} alt={key} className="w-full h-full object-contain" />
                   ) : (
@@ -361,7 +461,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
         승인 요청
       </button>
 
-      {status === 'approved' && (
+      {(status === 'approved' || status === 'completed') && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
           <h3 className="text-sm font-black text-emerald-700">작업 중 사진 업로드</h3>
           <label className="inline-flex items-center px-3 py-2 rounded-lg bg-emerald-700 text-white text-xs font-bold cursor-pointer">
@@ -370,20 +470,43 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
               type="file"
               accept="image/*"
               className="hidden"
-              disabled={uploadingKey === DURING_WORK_KEY}
+              disabled={uploadingKey === DURING_WORK_KEY || status === 'completed'}
               onChange={(e) => handleDuringPhotoUpload(e.target.files?.[0] || null)}
             />
           </label>
-          {payload.requiredPhotos.duringWork.작업중_안전블럭체결 && (
-            <div className="aspect-square w-full rounded-lg border border-emerald-200 bg-gray-100 overflow-hidden flex items-center justify-center">
+
+          <div className="w-full h-48 md:h-64 object-contain bg-gray-100 rounded-lg border border-emerald-200 overflow-hidden flex items-center justify-center">
+            {payload.requiredPhotos.duringWork.작업중_안전블럭체결 ? (
               <img
                 src={payload.requiredPhotos.duringWork.작업중_안전블럭체결}
                 alt={DURING_WORK_KEY}
                 className="w-full h-full object-contain"
               />
-            </div>
+            ) : (
+              <div className="text-[11px] text-emerald-500/80">작업중 사진 미업로드</div>
+            )}
+          </div>
+
+          {status === 'approved' && (
+            <button
+              onClick={markAsCompleted}
+              disabled={!payload.requiredPhotos.duringWork.작업중_안전블럭체결 || isSubmitting}
+              className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-black disabled:opacity-40"
+            >
+              작업 완료 처리
+            </button>
           )}
         </div>
+      )}
+
+      {status === 'completed' && (
+        <button
+          onClick={prepareNextFloorCycle}
+          disabled={isSubmitting}
+          className="w-full py-3 rounded-xl bg-indigo-600 text-white font-black text-sm disabled:opacity-40"
+        >
+          다음 층({(nextFloorNumber ?? 0) + 1}층) 인상 준비하기
+        </button>
       )}
     </section>
   );

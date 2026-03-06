@@ -16,6 +16,15 @@ const GangformPTWPage: React.FC = () => {
 
   return (
     <main className="min-h-screen bg-gray-50 text-gray-900 p-6 space-y-6">
+      <section className="bg-white border border-slate-200 rounded-2xl p-4 flex justify-end">
+        <a
+          href="/gangform-ptw/history"
+          className="inline-flex items-center px-3 py-2 rounded-xl text-xs font-black border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+        >
+          히스토리 대시보드
+        </a>
+      </section>
+
       <section className="bg-white border border-slate-200 rounded-2xl p-4">
         <h2 className="text-lg font-black mb-3">동별 현황 요약 보드</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

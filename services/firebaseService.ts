@@ -4,7 +4,7 @@ import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, writeBatch, 
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Building, ChatMessage, AnalysisResult } from '../types';
 
-type GangformPtwStatus = 'draft' | 'requested' | 'approved' | 'rejected';
+type GangformPtwStatus = 'draft' | 'requested' | 'approved' | 'completed' | 'rejected';
 
 export interface GangformPtwStoredRecord {
     payload: unknown;
