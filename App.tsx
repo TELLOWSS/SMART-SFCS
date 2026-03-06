@@ -40,6 +40,7 @@ import SiteMap from './components/SiteMap';
 import AnalysisView from './components/AnalysisView';
 import Manual from './components/Manual';
 import LiveChat from './components/LiveChat';
+import GangformPTW from './components/GangformPTW';
 import { suggestSitePlan } from './services/geminiService';
 import { 
     syncBuildings, 
@@ -1218,6 +1219,20 @@ const App: React.FC = () => {
             )}
             {activeTab === 'dashboard' && (
               <>
+                <GangformPTW
+                  role={currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR ? 'admin' : 'worker'}
+                  onSubmit={(payload) => {
+                    const beforePhotos = Object.values(payload.requiredPhotos.beforeWork).filter(Boolean).length;
+                    addNotification(`갱폼 PTW 승인요청 전송 (${beforePhotos}/4장 URL 포함)`, 'info');
+                  }}
+                  onApprove={() => {
+                    addNotification('갱폼 PTW가 승인되었습니다.', 'success');
+                  }}
+                  onReject={() => {
+                    addNotification('갱폼 PTW가 반려되었습니다.', 'warning');
+                  }}
+                />
+
                 {pendingApprovals.length > 0 && (
                   <div className="bg-white/80 backdrop-blur-md border border-orange-200 rounded-[2.5rem] py-4 md:py-6 shadow-2xl animate-fade-in-up w-full min-w-0 overflow-hidden">
                     <div className="flex items-center justify-between mb-5 px-4 md:px-6">
