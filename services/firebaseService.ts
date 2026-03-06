@@ -4,6 +4,16 @@ import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, writeBatch, 
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Building, ChatMessage, AnalysisResult } from '../types';
 
+type GangformPtwStatus = 'draft' | 'requested' | 'approved' | 'rejected';
+
+export interface GangformPtwStoredRecord {
+    payload: unknown;
+    status: GangformPtwStatus;
+    updatedAt: string;
+}
+
+export type GangformPtwStoredMap = Record<string, GangformPtwStoredRecord>;
+
 // ==================================================================================
 // [설정 완료] 사용자가 제공한 Firebase 키 적용됨
 // 이 설정값은 프로젝트 식별용이며, 실제 보안은 Firebase Console의 보안 규칙(Rules)으로 관리됩니다.
@@ -196,6 +206,36 @@ export const subscribeToAnalysisResult = (callback: (result: AnalysisResult | nu
     }, (error) => {
         console.error("Analysis sync error:", error);
     });
+    return unsubscribe;
+};
+
+export const saveGangformPtwData = async (ptwByBuilding: GangformPtwStoredMap) => {
+    if (!db) return;
+    try {
+        await setDoc(doc(db, "site_data", "gangform_ptw"), {
+            records: ptwByBuilding,
+            updatedAt: new Date().toISOString()
+        });
+    } catch (e) {
+        console.error("Gangform PTW save failed:", e);
+    }
+};
+
+export const subscribeToGangformPtwData = (callback: (records: GangformPtwStoredMap) => void) => {
+    if (!db) return () => {};
+
+    const unsubscribe = onSnapshot(doc(db, "site_data", "gangform_ptw"), (snapshot) => {
+        if (!snapshot.exists()) {
+            callback({});
+            return;
+        }
+
+        const data = snapshot.data() as { records?: GangformPtwStoredMap };
+        callback(data.records || {});
+    }, (error) => {
+        console.error("Gangform PTW sync error:", error);
+    });
+
     return unsubscribe;
 };
 

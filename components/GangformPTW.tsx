@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { uploadGangformPhoto } from '../lib/imageUploadUtil';
 
 type Role = 'worker' | 'admin';
-type ApprovalStatus = 'draft' | 'requested' | 'approved' | 'rejected';
+export type ApprovalStatus = 'draft' | 'requested' | 'approved' | 'rejected';
 
 interface EssentialChecks {
   compressiveStrength: number;
@@ -30,6 +30,7 @@ export interface GangformPTWPayload {
 }
 
 interface GangformPTWProps {
+  buildingId: string;
   role: Role;
   initialData?: GangformPTWPayload;
   initialStatus?: ApprovalStatus;
@@ -69,6 +70,7 @@ const defaultPayload: GangformPTWPayload = {
 };
 
 const GangformPTW: React.FC<GangformPTWProps> = ({
+  buildingId,
   role,
   initialData,
   initialStatus = 'draft',
@@ -80,6 +82,15 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
   const [status, setStatus] = useState<ApprovalStatus>(initialStatus);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialData) {
+      setPayload(initialData);
+    } else {
+      setPayload(defaultPayload);
+    }
+    setStatus(initialStatus);
+  }, [buildingId, initialData, initialStatus]);
 
   const compressiveWarning = payload.essentialChecks.compressiveStrength > 0 && payload.essentialChecks.compressiveStrength < 5;
 
@@ -200,7 +211,7 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
     return (
       <section className="bg-white rounded-3xl border border-slate-200 p-6 space-y-5">
         <header className="flex items-center justify-between">
-          <h2 className="text-lg font-black text-slate-800">갱폼 인상 PTW 관리자 뷰</h2>
+          <h2 className="text-lg font-black text-slate-800">갱폼 인상 PTW 관리자 뷰 · {buildingId}</h2>
           <span className="text-xs font-bold px-3 py-1 rounded-lg bg-slate-100 text-slate-600">상태: {status}</span>
         </header>
 
@@ -253,7 +264,7 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
   return (
     <section className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6">
       <header className="flex items-center justify-between">
-        <h2 className="text-lg font-black text-slate-800">갱폼 인상 PTW 작업자 뷰</h2>
+        <h2 className="text-lg font-black text-slate-800">갱폼 인상 PTW 작업자 뷰 · {buildingId}</h2>
         <span className="text-xs font-bold px-3 py-1 rounded-lg bg-slate-100 text-slate-600">상태: {status}</span>
       </header>
 

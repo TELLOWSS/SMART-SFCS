@@ -40,7 +40,7 @@ import SiteMap from './components/SiteMap';
 import AnalysisView from './components/AnalysisView';
 import Manual from './components/Manual';
 import LiveChat from './components/LiveChat';
-import GangformPTW from './components/GangformPTW';
+import GangformPTW, { GangformPTWPayload, ApprovalStatus } from './components/GangformPTW';
 import { suggestSitePlan } from './services/geminiService';
 import { 
     syncBuildings, 
@@ -50,7 +50,10 @@ import {
     sendChatMessage, 
     clearChatMessages, 
     subscribeToAnalysisResult, 
-    saveAnalysisResult 
+    saveAnalysisResult,
+    saveGangformPtwData,
+    subscribeToGangformPtwData,
+    GangformPtwStoredMap
 } from './services/firebaseService';
 
 interface StatusModalData {
@@ -330,8 +333,28 @@ const buildRoleCommunicationBundle = (siteName: string, highPriorityItems: Actio
   };
 };
 
+const getTabFromPath = (pathname: string): 'dashboard' | 'analysis' | 'manual' | 'ptw' => {
+  if (pathname === '/gangform-ptw') return 'ptw';
+  if (pathname === '/analysis') return 'analysis';
+  if (pathname === '/manual') return 'manual';
+  return 'dashboard';
+};
+
+const getPathFromTab = (tab: 'dashboard' | 'analysis' | 'manual' | 'ptw'): string => {
+  if (tab === 'ptw') return '/gangform-ptw';
+  if (tab === 'analysis') return '/analysis';
+  if (tab === 'manual') return '/manual';
+  return '/';
+};
+
+interface GangformPtwLocalRecord {
+  payload: GangformPTWPayload;
+  status: ApprovalStatus;
+  updatedAt: string;
+}
+
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'analysis' | 'manual'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'analysis' | 'manual' | 'ptw'>(() => getTabFromPath(window.location.pathname));
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>(UserRole.WORKER);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -345,6 +368,8 @@ const App: React.FC = () => {
   const [aiSuggestion, setAiSuggestion] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProcessStatus | 'ALL'>('ALL');
+  const [selectedPtwBuildingId, setSelectedPtwBuildingId] = useState<string>('');
+  const [gangformPtwByBuilding, setGangformPtwByBuilding] = useState<Record<string, GangformPtwLocalRecord>>({});
   
   const [currentTime, setCurrentTime] = useState<string>("");
   const [weather, setWeather] = useState<{temp: number, wind: number, condition: string} | null>(null);
@@ -373,11 +398,60 @@ const App: React.FC = () => {
     [analysisActionItems]
   );
 
+  const handleNavigateTab = (tab: 'dashboard' | 'analysis' | 'manual' | 'ptw') => {
+    const nextPath = getPathFromTab(tab);
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, '', nextPath);
+    }
+    setActiveTab(tab);
+    scrollToTop();
+  };
+
+  const getBuildingPtwStatus = (building: Building): '진행 전' | '승인 대기' | '완료' => {
+    const activeUnits = building.floors.flatMap(f => f.units).filter(u => !u.isDeadUnit);
+    if (activeUnits.some(u => u.status === ProcessStatus.APPROVAL_REQ)) return '승인 대기';
+    if (activeUnits.length > 0 && activeUnits.every(u => u.status === ProcessStatus.CURED || u.status === ProcessStatus.APPROVED)) return '완료';
+    return '진행 전';
+  };
+
+  const ptwSummary = useMemo(() => {
+    return buildings.map((building) => ({
+      buildingId: building.id,
+      buildingName: building.name,
+      status: (() => {
+        const ptwStatus = gangformPtwByBuilding[building.id]?.status;
+        if (ptwStatus === 'requested') return '승인 대기';
+        if (ptwStatus === 'approved') return '완료';
+        if (ptwStatus === 'rejected' || ptwStatus === 'draft') return '진행 전';
+        return getBuildingPtwStatus(building);
+      })()
+    }));
+  }, [buildings, gangformPtwByBuilding]);
+
+  const selectedPtwBuilding = useMemo(() => {
+    return buildings.find(b => b.id === selectedPtwBuildingId) || buildings[0] || null;
+  }, [buildings, selectedPtwBuildingId]);
+
   // [초기화] 브라우저 알림 권한 요청
   useEffect(() => {
     if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
         Notification.requestPermission();
     }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPtwBuildingId && buildings.length > 0) {
+      setSelectedPtwBuildingId(buildings[0].id);
+    }
+  }, [buildings, selectedPtwBuildingId]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setActiveTab(getTabFromPath(window.location.pathname));
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   // [Real-time Sync] Firebase 데이터 동기화
@@ -499,6 +573,22 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubscribe = subscribeToAnalysisResult((data) => {
         setLastAnalysisResult(data);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToGangformPtwData((records: GangformPtwStoredMap) => {
+      const mapped = Object.entries(records || {}).reduce((acc, [buildingId, record]) => {
+        if (!record || !record.payload) return acc;
+        acc[buildingId] = {
+          payload: record.payload as GangformPTWPayload,
+          status: record.status,
+          updatedAt: record.updatedAt
+        };
+        return acc;
+      }, {} as Record<string, GangformPtwLocalRecord>);
+      setGangformPtwByBuilding(mapped);
     });
     return () => unsubscribe();
   }, []);
@@ -1006,15 +1096,19 @@ const App: React.FC = () => {
         </div>
         
         <nav className="flex-1 p-4 space-y-1 mt-4 overflow-y-auto custom-scrollbar">
-          <button onClick={() => {setActiveTab('dashboard'); scrollToTop();}} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'dashboard' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
+          <button onClick={() => handleNavigateTab('dashboard')} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'dashboard' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
             <LayoutDashboard className="w-5 h-5 mr-3" /> 현황 대시보드
           </button>
           
-          <button onClick={() => {setActiveTab('analysis'); scrollToTop();}} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'analysis' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
+          <button onClick={() => handleNavigateTab('analysis')} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'analysis' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
             <MapIcon className="w-5 h-5 mr-3" /> AI 도면/데이터 분석
           </button>
+
+          <button onClick={() => handleNavigateTab('ptw')} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'ptw' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
+            <CheckCircle2 className="w-5 h-5 mr-3" /> 갱폼 작업허가 (PTW)
+          </button>
           
-          <button onClick={() => {setActiveTab('manual'); scrollToTop();}} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'manual' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
+          <button onClick={() => handleNavigateTab('manual')} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'manual' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
             <FileText className="w-5 h-5 mr-3" /> 기술 아키텍처
           </button>
 
@@ -1208,8 +1302,7 @@ const App: React.FC = () => {
                 </div>
                 <button
                   onClick={() => {
-                    setActiveTab('analysis');
-                    scrollToTop();
+                    handleNavigateTab('analysis');
                   }}
                   className="px-4 py-2 bg-red-500 text-white text-xs font-black rounded-xl hover:bg-red-600 transition-colors self-start md:self-auto"
                 >
@@ -1219,20 +1312,6 @@ const App: React.FC = () => {
             )}
             {activeTab === 'dashboard' && (
               <>
-                <GangformPTW
-                  role={currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR ? 'admin' : 'worker'}
-                  onSubmit={(payload) => {
-                    const beforePhotos = Object.values(payload.requiredPhotos.beforeWork).filter(Boolean).length;
-                    addNotification(`갱폼 PTW 승인요청 전송 (${beforePhotos}/4장 URL 포함)`, 'info');
-                  }}
-                  onApprove={() => {
-                    addNotification('갱폼 PTW가 승인되었습니다.', 'success');
-                  }}
-                  onReject={() => {
-                    addNotification('갱폼 PTW가 반려되었습니다.', 'warning');
-                  }}
-                />
-
                 {pendingApprovals.length > 0 && (
                   <div className="bg-white/80 backdrop-blur-md border border-orange-200 rounded-[2.5rem] py-4 md:py-6 shadow-2xl animate-fade-in-up w-full min-w-0 overflow-hidden">
                     <div className="flex items-center justify-between mb-5 px-4 md:px-6">
@@ -1376,9 +1455,114 @@ const App: React.FC = () => {
             )}
             {activeTab === 'manual' && (
               <Manual onClose={() => { 
-                setActiveTab('dashboard'); 
-                scrollToTop(); 
+                handleNavigateTab('dashboard');
               }} />
+            )}
+            {activeTab === 'ptw' && (
+              <section className="bg-gray-50 text-gray-900 rounded-[2rem] border border-slate-200 p-5 md:p-8 space-y-6 animate-fade-in-up">
+                <div>
+                  <h2 className="text-2xl font-black tracking-tight text-gray-900">갱폼 작업허가(PTW)</h2>
+                  <p className="text-sm text-slate-600 mt-1">동별 선택 기반 작업허가 진행 현황 및 승인 관리</p>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-4 md:p-5">
+                  <h3 className="text-sm font-black text-slate-700 mb-3">동별 현황 요약 보드</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {ptwSummary.map((item) => (
+                      <div key={item.buildingId} className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-center justify-between">
+                        <span className="text-sm font-black text-slate-800">{item.buildingName}</span>
+                        <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${
+                          item.status === '완료'
+                            ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                            : item.status === '승인 대기'
+                            ? 'bg-orange-50 text-orange-600 border-orange-100'
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}>
+                          {item.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-4 md:p-5">
+                  <h3 className="text-sm font-black text-slate-700 mb-3">동 선택</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {buildings.map((building) => (
+                      <button
+                        key={building.id}
+                        onClick={() => setSelectedPtwBuildingId(building.id)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all border ${
+                          selectedPtwBuilding?.id === building.id
+                            ? 'bg-brand-primary text-white border-brand-primary shadow-md'
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-brand-primary/40'
+                        }`}
+                      >
+                        {building.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedPtwBuilding && (
+                  <GangformPTW
+                    buildingId={selectedPtwBuilding.name}
+                    role={currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR ? 'admin' : 'worker'}
+                    initialData={gangformPtwByBuilding[selectedPtwBuilding.id]?.payload}
+                    initialStatus={gangformPtwByBuilding[selectedPtwBuilding.id]?.status || 'draft'}
+                    onSubmit={(payload) => {
+                      const beforePhotos = Object.values(payload.requiredPhotos.beforeWork).filter(Boolean).length;
+                      addNotification(`[${selectedPtwBuilding.name}] PTW 승인요청 전송 (${beforePhotos}/4장 URL 포함)`, 'info');
+                      setGangformPtwByBuilding(prev => {
+                        const next = {
+                          ...prev,
+                          [selectedPtwBuilding.id]: {
+                            payload,
+                            status: 'requested',
+                            updatedAt: new Date().toISOString()
+                          }
+                        };
+                        saveGangformPtwData(next as GangformPtwStoredMap);
+                        return next;
+                      });
+                    }}
+                    onApprove={() => {
+                      addNotification(`[${selectedPtwBuilding.name}] PTW가 승인되었습니다.`, 'success');
+                      setGangformPtwByBuilding(prev => {
+                        const current = prev[selectedPtwBuilding.id];
+                        if (!current) return prev;
+                        const next = {
+                          ...prev,
+                          [selectedPtwBuilding.id]: {
+                            ...current,
+                            status: 'approved',
+                            updatedAt: new Date().toISOString()
+                          }
+                        };
+                        saveGangformPtwData(next as GangformPtwStoredMap);
+                        return next;
+                      });
+                    }}
+                    onReject={() => {
+                      addNotification(`[${selectedPtwBuilding.name}] PTW가 반려되었습니다.`, 'warning');
+                      setGangformPtwByBuilding(prev => {
+                        const current = prev[selectedPtwBuilding.id];
+                        if (!current) return prev;
+                        const next = {
+                          ...prev,
+                          [selectedPtwBuilding.id]: {
+                            ...current,
+                            status: 'rejected',
+                            updatedAt: new Date().toISOString()
+                          }
+                        };
+                        saveGangformPtwData(next as GangformPtwStoredMap);
+                        return next;
+                      });
+                    }}
+                  />
+                )}
+              </section>
             )}
         </div>
         
