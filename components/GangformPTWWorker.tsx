@@ -53,6 +53,12 @@ interface GangformPTWWorkerProps {
 interface LocalDraftState {
   payload: GangformPTWPayload;
   status: ApprovalStatus;
+  practiceMode: boolean;
+}
+
+interface WorkerSnapshot {
+  payload: GangformPTWPayload;
+  status: ApprovalStatus;
 }
 
 export const BEFORE_WORK_KEYS = [
@@ -171,6 +177,8 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   const [status, setStatus] = useState<ApprovalStatus>(initialStatus);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  const [isPracticeMode, setIsPracticeMode] = useState(false);
+  const [undoStack, setUndoStack] = useState<WorkerSnapshot[]>([]);
 
   const storageKey = useMemo(() => getLocalStorageKey(buildingId), [buildingId]);
 
@@ -179,16 +187,37 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     if (localDraft) {
       setPayload(normalizeGangformPayload(buildingId, localDraft.payload));
       setStatus(localDraft.status);
+      setIsPracticeMode(Boolean(localDraft.practiceMode));
+      setUndoStack([]);
       return;
     }
 
     setPayload(normalizeGangformPayload(buildingId, initialData));
     setStatus(initialStatus);
+    setIsPracticeMode(false);
+    setUndoStack([]);
   }, [buildingId, initialData, initialStatus, storageKey]);
 
   useEffect(() => {
-    writeLocalDraft(storageKey, { payload, status });
-  }, [payload, status, storageKey]);
+    writeLocalDraft(storageKey, { payload, status, practiceMode: isPracticeMode });
+  }, [payload, status, isPracticeMode, storageKey]);
+
+  const pushUndoSnapshot = () => {
+    setUndoStack((prev) => {
+      const next = [...prev, { payload, status }];
+      return next.slice(-20);
+    });
+  };
+
+  const handleUndo = () => {
+    setUndoStack((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      setPayload(last.payload);
+      setStatus(last.status);
+      return prev.slice(0, -1);
+    });
+  };
 
   const compressiveWarning = payload.essentialChecks.compressiveStrength > 0 && payload.essentialChecks.compressiveStrength < 5;
 
@@ -208,6 +237,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   const nextFloorNumber = parseFloorNumber(payload.floor)?.valueOf();
 
   const handleStrengthChange = (value: string) => {
+    pushUndoSnapshot();
     const num = Number(value || 0);
     setPayload((prev) => ({
       ...prev,
@@ -219,6 +249,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   };
 
   const handleLocationChange = (key: 'building' | 'floor', value: string) => {
+    pushUndoSnapshot();
     setPayload((prev) => ({
       ...prev,
       [key]: value
@@ -226,6 +257,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   };
 
   const handleCheckChange = (key: keyof Omit<EssentialChecks, 'compressiveStrength'>, checked: boolean) => {
+    pushUndoSnapshot();
     setPayload((prev) => ({
       ...prev,
       essentialChecks: {
@@ -243,6 +275,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     try {
       setUploadingKey(key);
       const { publicUrl } = await uploadGangformPhoto(file, 'beforeWork', key);
+      pushUndoSnapshot();
       setPayload((prev) => ({
         ...prev,
         requiredPhotos: {
@@ -265,6 +298,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     try {
       setUploadingKey(DURING_WORK_KEY);
       const { publicUrl } = await uploadGangformPhoto(file, 'duringWork', DURING_WORK_KEY);
+      pushUndoSnapshot();
       setPayload((prev) => ({
         ...prev,
         requiredPhotos: {
@@ -287,6 +321,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
 
     try {
       setIsSubmitting(true);
+      pushUndoSnapshot();
 
       const dbPayload = {
         building: payload.building.trim(),
@@ -298,12 +333,14 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
         requestedAtClient: new Date().toISOString()
       };
 
-      await onSubmit?.({
-        ...payload,
-        building: dbPayload.building,
-        floor: dbPayload.floor,
-        submissionRecord: dbPayload
-      });
+      if (!isPracticeMode) {
+        await onSubmit?.({
+          ...payload,
+          building: dbPayload.building,
+          floor: dbPayload.floor,
+          submissionRecord: dbPayload
+        });
+      }
 
       setStatus('requested');
     } finally {
@@ -316,10 +353,13 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
 
     try {
       setIsSubmitting(true);
-      if (!onComplete) {
+      pushUndoSnapshot();
+      if (!isPracticeMode && !onComplete) {
         throw new Error('완료 기록 DB 저장 함수가 연결되지 않았습니다.');
       }
-      await onComplete?.(payload);
+      if (!isPracticeMode) {
+        await onComplete?.(payload);
+      }
       setStatus('completed');
     } catch (error) {
       alert(error instanceof Error ? error.message : '완료 기록 저장 실패');
@@ -339,18 +379,55 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     };
 
     clearLocalDraft(storageKey);
+    setUndoStack([]);
     setPayload(nextPayload);
     setStatus('draft');
 
-    await onCycleReset?.(nextPayload);
+    if (!isPracticeMode) {
+      await onCycleReset?.(nextPayload);
+    }
   };
 
   return (
     <section className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6">
       <header className="flex items-center justify-between">
         <h2 className="text-lg font-black text-slate-800">갱폼 인상 PTW 작업자 뷰 · {buildingId}</h2>
-        <span className="text-xs font-bold px-3 py-1 rounded-lg bg-slate-100 text-slate-600">상태: {status}</span>
+        <div className="flex items-center gap-2">
+          {isPracticeMode && (
+            <span className="text-xs font-black px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 border border-amber-200">
+              PRACTICE
+            </span>
+          )}
+          <span className="text-xs font-bold px-3 py-1 rounded-lg bg-slate-100 text-slate-600">상태: {status}</span>
+        </div>
       </header>
+
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsPracticeMode((prev) => !prev)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-black border ${
+              isPracticeMode
+                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : 'bg-white text-slate-700 border-slate-300'
+            }`}
+          >
+            {isPracticeMode ? '연습 모드 ON' : '연습 모드 OFF'}
+          </button>
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={undoStack.length === 0 || isSubmitting || Boolean(uploadingKey)}
+            className="px-3 py-1.5 rounded-lg text-xs font-black border border-slate-300 bg-white text-slate-700 disabled:opacity-40"
+          >
+            되돌리기 ({undoStack.length})
+          </button>
+        </div>
+        {isPracticeMode && (
+          <p className="text-xs font-bold text-amber-700">연습 모드에서는 승인요청/완료처리가 서버에 저장되지 않습니다.</p>
+        )}
+      </div>
 
       <div className="space-y-3">
         <p className="text-sm font-black text-slate-700">작업 위치 정보</p>
