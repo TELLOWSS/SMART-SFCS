@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { uploadGangformPhoto } from '../lib/imageUploadUtil';
+import { uploadGangformPhoto, type GangformPhotoSlotKey } from '../lib/imageUploadUtil';
 
 type Role = 'worker' | 'admin';
 export type ApprovalStatus = 'draft' | 'requested' | 'approved' | 'rejected';
@@ -44,9 +44,9 @@ const BEFORE_WORK_KEYS = [
   '와이어로프_반자동샤클',
   '발판상부_낙하물제거',
   '하부통제_감시인'
-] as const;
+] as const satisfies readonly GangformPhotoSlotKey[];
 
-const DURING_WORK_KEY = '작업중_안전블럭체결' as const;
+const DURING_WORK_KEY = '작업중_안전블럭체결' as const satisfies GangformPhotoSlotKey;
 
 const defaultPayload: GangformPTWPayload = {
   category: 'GANGFORM_PTW_APPROVAL',

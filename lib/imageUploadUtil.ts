@@ -7,11 +7,25 @@ export interface UploadResult {
   sizeBytes: number;
 }
 
+export const STORAGE_SLOT_PATH_MAP = {
+  TBM_및_보호구: 'tbm_ppe',
+  와이어로프_반자동샤클: 'wire_shackle',
+  발판상부_낙하물제거: 'clear_debris',
+  하부통제_감시인: 'lower_control',
+  작업중_안전블럭체결: 'safety_block'
+} as const;
+
+export type GangformPhotoSlotKey = keyof typeof STORAGE_SLOT_PATH_MAP;
+
 const sanitizeFileName = (name: string) =>
   name
     .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9_.-]/g, '');
+
+const getStorageSlotPath = (slotKey: GangformPhotoSlotKey): string => {
+  return STORAGE_SLOT_PATH_MAP[slotKey];
+};
 
 export const compressImageUnder300KB = async (file: File): Promise<File> => {
   const compressed = await imageCompression(file, {
@@ -36,13 +50,18 @@ export const compressImageUnder300KB = async (file: File): Promise<File> => {
 export const uploadGangformPhoto = async (
   file: File,
   folder: 'beforeWork' | 'duringWork',
-  slotKey: string
+  slotKey: GangformPhotoSlotKey
 ): Promise<UploadResult> => {
   const compressed = await compressImageUnder300KB(file);
 
   const timestamp = Date.now();
   const safeName = sanitizeFileName(file.name || 'photo.jpg');
-  const filePath = `${folder}/${slotKey}/${timestamp}-${safeName}`;
+  const storageSlotPath = getStorageSlotPath(slotKey);
+  const filePath = `${folder}/${storageSlotPath}/${timestamp}-${safeName}`;
+
+  if (import.meta.env.DEV) {
+    console.info('[GangformPTW] upload path', { slotKey, storageSlotPath, filePath });
+  }
 
   const { error: uploadError } = await supabase.storage
     .from(GANGFORM_BUCKET)
