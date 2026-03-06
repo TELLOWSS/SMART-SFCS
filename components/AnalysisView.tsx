@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Upload, Loader2, CheckCircle, AlertTriangle, FileText, Scan, Zap, X, Image as ImageIcon, Shield, AlertOctagon, ClipboardList, Activity, FileSpreadsheet, Info, Download, RotateCcw, Check, Lock, Eye } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { analyzeDrawing, FileInput } from '../services/geminiService';
-import { Building, AnalysisResult, UserRole } from '../types';
+import { Building, AnalysisResult, UserRole, RiskCategoryCode, RiskFactor, ActionItem, ActionPriority } from '../types';
 
 interface AnalysisViewProps {
   onAnalysisComplete: (result: AnalysisResult) => void;
@@ -159,7 +159,51 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
     }
   };
 
-  const radarData = result?.riskFactors.map(r => ({ subject: r.category, A: r.score, fullMark: 100 })) || [];
+  const riskCategoryLabels: Record<RiskCategoryCode, string> = {
+    APPROVAL_DELAY: '승인 지연',
+    REJECTION_CLUSTER: '반려 사유',
+    PROCESS_CHAT_MISMATCH: '공정-채팅 불일치',
+    SAFETY_ALERT_PRIORITY: '안전 경고',
+    MATERIAL_EQUIPMENT_BOTTLENECK: '자재/장비 병목',
+    SUBCONTRACTOR_RESPONSE_DELAY: '협력사 응답 지연',
+    REWORK_OCCURRENCE: '재작업',
+    DEAD_UNIT_EXCEPTION: '데드유닛 예외',
+    OTHER: '기타'
+  };
+
+  const getRiskLabel = (risk: RiskFactor): string => {
+    if (risk.code && riskCategoryLabels[risk.code]) return riskCategoryLabels[risk.code];
+    return risk.category;
+  };
+
+  const radarData = result?.riskFactors.map(r => ({ subject: getRiskLabel(r), A: r.score, fullMark: 100 })) || [];
+
+  const normalizedActionItems: ActionItem[] = Array.isArray((result as any)?.actionItems)
+    ? (result as any).actionItems
+      .map((item: any): ActionItem | null => {
+        if (typeof item === 'string') {
+          const title = item.trim();
+          if (!title) return null;
+          return { title, code: 'GENERAL_ACTION', priority: 'medium', dueAt: null };
+        }
+        if (item && typeof item === 'object' && item.title) {
+          return {
+            title: String(item.title),
+            code: item.code || 'GENERAL_ACTION',
+            priority: (item.priority || 'medium') as ActionPriority,
+            dueAt: item.dueAt || null
+          };
+        }
+        return null;
+      })
+      .filter((item: ActionItem | null): item is ActionItem => item !== null)
+    : [];
+
+  const getPriorityBadge = (priority: ActionPriority) => {
+    if (priority === 'high') return 'bg-red-50 text-red-500 border border-red-100';
+    if (priority === 'medium') return 'bg-amber-50 text-amber-600 border border-amber-100';
+    return 'bg-slate-100 text-slate-500 border border-slate-200';
+  };
 
   return (
     <div className="bg-white rounded-[2.5rem] shadow-tech border border-slate-200 overflow-hidden min-h-[700px] flex flex-col relative animate-fade-in-up">
@@ -382,6 +426,25 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
                                      ))}
                                  </div>
                              </div>
+
+                             {normalizedActionItems.length > 0 && (
+                               <div className="mt-6 space-y-3">
+                                  <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex justify-between items-center">
+                                    <span>Action Items</span>
+                                    <span className="text-brand-primary">{normalizedActionItems.length} Tasks</span>
+                                  </h5>
+                                  <div className="space-y-2 max-h-[180px] overflow-y-auto custom-scrollbar pr-1">
+                                    {normalizedActionItems.map((item, index) => (
+                                      <div key={`${item.title}-${index}`} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-start justify-between gap-3">
+                                        <p className="text-[12px] text-slate-700 font-semibold leading-relaxed">{item.title}</p>
+                                        <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md whitespace-nowrap ${getPriorityBadge(item.priority)}`}>
+                                          {item.priority}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                               </div>
+                             )}
                              
                              <button className="mt-8 w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center hover:bg-slate-800 transition-all shadow-lg active:scale-95">
                                 <Download className="w-4 h-4 mr-3" /> Full Analysis PDF Export

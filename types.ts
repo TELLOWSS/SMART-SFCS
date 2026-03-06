@@ -51,13 +51,47 @@ export interface AnalysisResult {
   summary: string;
   buildingStructures: BuildingStructure[]; // AI가 분석한 실제 단지 구조
   riskFactors: RiskFactor[];
-  actionItems: string[];
+  actionItems: ActionItem[];
+}
+
+export type RiskCategoryCode =
+  | 'APPROVAL_DELAY'
+  | 'REJECTION_CLUSTER'
+  | 'PROCESS_CHAT_MISMATCH'
+  | 'SAFETY_ALERT_PRIORITY'
+  | 'MATERIAL_EQUIPMENT_BOTTLENECK'
+  | 'SUBCONTRACTOR_RESPONSE_DELAY'
+  | 'REWORK_OCCURRENCE'
+  | 'DEAD_UNIT_EXCEPTION'
+  | 'OTHER';
+
+export type RiskSeverity = 'high' | 'medium' | 'low';
+
+export type ActionItemCode =
+  | 'VERIFY_DRAWING_SYNC'
+  | 'REQUEST_APPROVAL'
+  | 'REVIEW_REJECTION_REASON'
+  | 'CHECK_SAFETY_ALERT'
+  | 'RESOLVE_MATERIAL_ISSUE'
+  | 'FOLLOWUP_SUBCONTRACTOR'
+  | 'VERIFY_DEAD_UNIT_EXCEPTION'
+  | 'GENERAL_ACTION';
+
+export type ActionPriority = 'high' | 'medium' | 'low';
+
+export interface ActionItem {
+  title: string;
+  code: ActionItemCode;
+  priority: ActionPriority;
+  dueAt?: string | null;
 }
 
 export interface RiskFactor {
   category: string;
   score: number;
   detail: string;
+  code?: RiskCategoryCode;
+  severity?: RiskSeverity;
 }
 
 // [중요] 브라우저 내장 Notification 객체와 충돌 방지를 위해 SystemNotification으로 명명

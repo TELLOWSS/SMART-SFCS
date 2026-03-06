@@ -34,7 +34,7 @@ import {
   ThumbsDown // [New] Icon for Reject
 } from 'lucide-react';
 // [중요] Notification이 아닌 SystemNotification을 가져옵니다.
-import { Building, ProcessStatus, UserRole, SystemNotification, AnalysisResult, BuildingStructure, Floor, Unit } from './types';
+import { Building, ProcessStatus, UserRole, SystemNotification, AnalysisResult, BuildingStructure, Floor, Unit, ActionItem, ActionPriority } from './types';
 import BuildingSection from './components/BuildingSection';
 import SiteMap from './components/SiteMap';
 import AnalysisView from './components/AnalysisView';
@@ -280,6 +280,55 @@ const notifySystem = (title: string, body: string, soundUrl: string = 'https://a
   }
 };
 
+const normalizeAnalysisActionItems = (result: AnalysisResult | null): ActionItem[] => {
+  if (!result || !Array.isArray((result as any).actionItems)) return [];
+
+  return (result as any).actionItems
+    .map((item: any): ActionItem | null => {
+      if (typeof item === 'string') {
+        const title = item.trim();
+        if (!title) return null;
+        return { title, code: 'GENERAL_ACTION', priority: 'medium', dueAt: null };
+      }
+
+      if (item && typeof item === 'object') {
+        const title = String(item.title || '').trim();
+        if (!title) return null;
+        const priority: ActionPriority = item.priority === 'high' || item.priority === 'low' ? item.priority : 'medium';
+        return {
+          title,
+          code: item.code || 'GENERAL_ACTION',
+          priority,
+          dueAt: item.dueAt || null
+        };
+      }
+
+      return null;
+    })
+    .filter((item: ActionItem | null): item is ActionItem => item !== null);
+};
+
+const buildAnalysisAlertKey = (result: AnalysisResult | null): string => {
+  if (!result) return '';
+  const actions = normalizeAnalysisActionItems(result)
+    .map(a => `${a.code}|${a.priority}|${a.title}`)
+    .join('||');
+  return `${result.siteName}|${result.projectCode}|${actions}`;
+};
+
+const buildRoleCommunicationBundle = (siteName: string, highPriorityItems: ActionItem[]) => {
+  const summary = highPriorityItems.slice(0, 2).map(item => item.title).join(' / ');
+  const count = highPriorityItems.length;
+
+  return {
+    summary,
+    admin: `🛡️ [관리자 지시] ${siteName} - 긴급 항목 ${count}건 확인 후 담당 지정 및 기한 설정: ${summary}`,
+    worker: `🛠️ [작업자 안내] ${siteName} - 긴급 항목 ${count}건 관련 즉시 점검 및 진행상태 보고: ${summary}`,
+    subcontractor: `🤝 [협력사 요청] ${siteName} - 긴급 항목 ${count}건 대응 계획/회신 필요: ${summary}`,
+    integrated: `🚨 [긴급 액션 공유]\n- 관리자: 담당 배정 및 승인 경로 점검\n- 작업자: 즉시 현장 점검 및 보고\n- 협력사: 대응 계획 회신\n핵심: ${summary}`
+  };
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'analysis' | 'manual'>('dashboard');
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>(UserRole.WORKER);
@@ -313,8 +362,15 @@ const App: React.FC = () => {
 
   // [알림 시스템] 이전 빌딩 상태를 기억하기 위한 Ref
   const prevBuildingsRef = useRef<Building[]>([]);
+  const analysisAlertKeyRef = useRef<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const analysisActionItems = useMemo(() => normalizeAnalysisActionItems(lastAnalysisResult), [lastAnalysisResult]);
+  const highPriorityActionItems = useMemo(
+    () => analysisActionItems.filter(item => item.priority === 'high'),
+    [analysisActionItems]
+  );
 
   // [초기화] 브라우저 알림 권한 요청
   useEffect(() => {
@@ -539,6 +595,49 @@ const App: React.FC = () => {
       setSiteName(result.siteName);
       setProjectCode(result.projectCode);
       setAiSuggestion(result.summary);
+
+      const alertKey = buildAnalysisAlertKey(result);
+      analysisAlertKeyRef.current = alertKey;
+
+      const highPriority = normalizeAnalysisActionItems(result).filter(item => item.priority === 'high');
+      if (highPriority.length > 0) {
+          const comm = buildRoleCommunicationBundle(result.siteName, highPriority);
+          setNotifications(prev => [{
+            id: Date.now().toString() + Math.random(),
+            message: `[긴급 액션] ${highPriority.length}건 - ${comm.summary}`,
+            type: 'warning',
+            timestamp: '방금 전',
+            read: false
+          }, ...prev]);
+          notifySystem('SFCS 긴급 실행 항목', `고우선 액션 ${highPriority.length}건이 도출되었습니다.`);
+
+          Promise.all([
+            sendChatMessage({
+              text: comm.admin,
+              userRole: UserRole.ADMIN,
+              timestamp: Date.now(),
+              senderName: 'AI 분석 알림'
+            }),
+            sendChatMessage({
+              text: comm.worker,
+              userRole: UserRole.WORKER,
+              timestamp: Date.now() + 1,
+              senderName: 'AI 분석 알림'
+            }),
+            sendChatMessage({
+              text: comm.subcontractor,
+              userRole: UserRole.SUBCONTRACTOR,
+              timestamp: Date.now() + 2,
+              senderName: 'AI 분석 알림'
+            }),
+            sendChatMessage({
+              text: comm.integrated,
+              userRole: currentUserRole,
+              timestamp: Date.now() + 3,
+              senderName: 'AI 소통 브리핑'
+            })
+          ]).catch((e) => console.error('High priority role communication send failed:', e));
+      }
       
       // [신규] Firebase에 분석 결과 저장 (Persistence)
       saveAnalysisResult(result);
@@ -799,6 +898,56 @@ const App: React.FC = () => {
     setNotifications(prev => [{ id: Date.now().toString(), message: msg, type, timestamp: '방금 전', read: false }, ...prev]);
   };
 
+  useEffect(() => {
+    if (!lastAnalysisResult) return;
+
+    const nextKey = buildAnalysisAlertKey(lastAnalysisResult);
+    if (!nextKey) return;
+
+    if (analysisAlertKeyRef.current === null) {
+      analysisAlertKeyRef.current = nextKey;
+      return;
+    }
+
+    if (analysisAlertKeyRef.current === nextKey) return;
+    analysisAlertKeyRef.current = nextKey;
+
+    const highPriority = normalizeAnalysisActionItems(lastAnalysisResult).filter(item => item.priority === 'high');
+    if (highPriority.length === 0) return;
+
+    const comm = buildRoleCommunicationBundle(lastAnalysisResult.siteName, highPriority);
+    setNotifications(prev => [{
+      id: Date.now().toString() + Math.random(),
+      message: `[동기화 긴급] ${highPriority.length}건 - ${comm.summary}`,
+      type: 'warning',
+      timestamp: '방금 전',
+      read: false
+    }, ...prev]);
+
+    notifySystem('SFCS 긴급 항목 동기화', `새 분석 결과에서 긴급 액션 ${highPriority.length}건이 동기화되었습니다.`);
+
+    Promise.all([
+      sendChatMessage({
+        text: comm.admin,
+        userRole: UserRole.ADMIN,
+        timestamp: Date.now(),
+        senderName: 'AI 동기화 알림'
+      }),
+      sendChatMessage({
+        text: comm.worker,
+        userRole: UserRole.WORKER,
+        timestamp: Date.now() + 1,
+        senderName: 'AI 동기화 알림'
+      }),
+      sendChatMessage({
+        text: comm.subcontractor,
+        userRole: UserRole.SUBCONTRACTOR,
+        timestamp: Date.now() + 2,
+        senderName: 'AI 동기화 알림'
+      })
+    ]).catch((e) => console.error('Synced high priority role communication send failed:', e));
+  }, [lastAnalysisResult]);
+
   const pendingApprovals = useMemo(() => {
     const list: any[] = [];
     buildings.forEach(b => b.floors.forEach(f => f.units.forEach(u => {
@@ -1047,6 +1196,26 @@ const App: React.FC = () => {
         </header>
         
         <div className="relative z-10 flex-1 space-y-6 md:space-y-12 px-4 md:px-10 pb-24 w-full max-w-[1440px] mx-auto overflow-x-hidden">
+            {highPriorityActionItems.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-[2rem] p-4 md:p-5 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3 animate-fade-in-up">
+                <div className="flex items-start">
+                  <AlertTriangle className="w-5 h-5 text-red-500 mr-2 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-black text-red-700">AI 긴급 실행 항목 {highPriorityActionItems.length}건</p>
+                    <p className="text-xs text-red-600 mt-1">{highPriorityActionItems.slice(0, 2).map(item => item.title).join(' / ')}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveTab('analysis');
+                    scrollToTop();
+                  }}
+                  className="px-4 py-2 bg-red-500 text-white text-xs font-black rounded-xl hover:bg-red-600 transition-colors self-start md:self-auto"
+                >
+                  분석 화면으로 이동
+                </button>
+              </div>
+            )}
             {activeTab === 'dashboard' && (
               <>
                 {pendingApprovals.length > 0 && (
