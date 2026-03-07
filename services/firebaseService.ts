@@ -10,9 +10,21 @@ export interface GangformPtwStoredRecord {
     payload: unknown;
     status: GangformPtwStatus;
     updatedAt: string;
+    requestedAt?: string | null;
+    approvedAt?: string | null;
+    completedAt?: string | null;
 }
 
 export type GangformPtwStoredMap = Record<string, GangformPtwStoredRecord>;
+
+export interface ApprovalLeadTimeEventRecord {
+    approvedAt: string;
+    leadMinutes: number;
+    buildingId: string;
+    buildingName: string;
+    floor: string;
+    createdAt: string;
+}
 
 // ==================================================================================
 // [설정 완료] 사용자가 제공한 Firebase 키 적용됨
@@ -234,6 +246,39 @@ export const subscribeToGangformPtwData = (callback: (records: GangformPtwStored
         callback(data.records || {});
     }, (error) => {
         console.error("Gangform PTW sync error:", error);
+    });
+
+    return unsubscribe;
+};
+
+export const saveApprovalLeadTimeEvent = async (event: Omit<ApprovalLeadTimeEventRecord, 'createdAt'>) => {
+    if (!db) return;
+
+    try {
+        await addDoc(collection(db, "ptw_leadtime_events"), {
+            ...event,
+            createdAt: new Date().toISOString()
+        });
+    } catch (e) {
+        console.error("Approval lead-time event save failed:", e);
+    }
+};
+
+export const subscribeApprovalLeadTimeEvents = (
+    callback: (events: ApprovalLeadTimeEventRecord[]) => void,
+    maxCount: number = 500
+) => {
+    if (!db) return () => {};
+
+    const q = query(collection(db, "ptw_leadtime_events"), orderBy("approvedAt", "desc"), limit(maxCount));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        const events: ApprovalLeadTimeEventRecord[] = [];
+        snapshot.forEach((doc) => {
+            events.push(doc.data() as ApprovalLeadTimeEventRecord);
+        });
+        callback(events);
+    }, (error) => {
+        console.error("Approval lead-time events sync error:", error);
     });
 
     return unsubscribe;

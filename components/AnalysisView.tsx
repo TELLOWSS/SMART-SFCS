@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Loader2, CheckCircle, AlertTriangle, FileText, Scan, Zap, X, Image as ImageIcon, Shield, AlertOctagon, ClipboardList, Activity, FileSpreadsheet, Info, Download, RotateCcw, Check, Lock, Eye } from 'lucide-react';
+import { Upload, Loader2, CheckCircle, AlertTriangle, FileText, Scan, Zap, X, Image as ImageIcon, Shield, AlertOctagon, ClipboardList, Activity, FileSpreadsheet, Info, Download, RotateCcw, Check, Lock, Eye, Sparkles } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { analyzeDrawing, FileInput } from '../services/geminiService';
 import { Building, AnalysisResult, UserRole, RiskCategoryCode, RiskFactor, ActionItem, ActionPriority } from '../types';
@@ -245,16 +245,16 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
         {/* 업로드 섹션: 제작자(CREATOR)에게만 표시 */}
         {userRole === UserRole.CREATOR ? (
             <div className="lg:col-span-4 space-y-6">
-              <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm relative overflow-hidden group">
+              <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 group-hover:bg-blue-100 transition-colors"></div>
                   <h3 className="font-black text-slate-800 mb-6 flex items-center text-xs uppercase tracking-widest relative z-10"><FileText className="w-4 h-4 mr-2 text-brand-primary" /> Analysis Source</h3>
                   
-                  <label className={`relative z-10 group flex flex-col items-center justify-center w-full h-48 border-2 border-slate-200 border-dashed rounded-[2rem] cursor-pointer bg-slate-50/50 hover:bg-white transition-all hover:border-brand-primary mb-6 ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label className={`relative z-10 group flex flex-col items-center justify-center w-full h-48 border-2 border-slate-200 border-dashed rounded-lg cursor-pointer bg-slate-50/50 hover:bg-white transition-all hover:border-brand-primary mb-6 ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}>
                     <div className="flex flex-col items-center justify-center p-6 text-center">
                       <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-100 mb-4 group-hover:scale-110 transition-transform">
                         <Upload className="w-7 h-7 text-brand-primary" />
                       </div>
-                      <p className="text-sm font-black text-slate-700">도면 또는 데이터 업로드</p>
+                      <p className="text-sm font-black text-slate-700">현장 증빙 데이터 동기화</p>
                       <p className="text-[10px] text-slate-400 mt-2 font-medium">PDF, 이미지, 엑셀 정밀 분석 지원</p>
                     </div>
                     <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.csv,.xlsx,.xls" multiple onChange={handleFileChange} />
@@ -288,11 +288,11 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
                         : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
                     }`}
                   >
-                     {isAnalyzing ? <><Loader2 className="w-5 h-5 mr-3 animate-spin" /> 구조적 맵핑 분석 중...</> : <><Scan className="w-5 h-5 mr-3" /> 데이터 동기화 실행</>}
+                    {isAnalyzing ? <><Loader2 className="w-5 h-5 mr-3 animate-spin" /> 지능형 리스크 추출 엔진 실행 중...</> : <><Scan className="w-5 h-5 mr-3" /> 지능형 리스크 추출 (AI Engine Run)</>}
                   </button>
               </div>
 
-              <div className="p-6 bg-blue-50/30 rounded-[2rem] border border-blue-100/50 text-[12px] text-blue-700 leading-relaxed shadow-sm">
+                  <div className="p-6 bg-blue-50/30 rounded-lg border border-blue-100/50 text-[12px] text-blue-700 leading-relaxed shadow-sm">
                   <p className="font-black flex items-center mb-2"><Info className="w-4 h-4 mr-2" /> 정밀 분석 가이드 (Guideline)</p>
                   <ul className="space-y-1.5 opacity-80 font-medium">
                     <li>• 평면도 내 '죽은 세대'는 범례를 기준으로 자동 탐지됩니다.</li>
@@ -317,7 +317,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
                  
                  {/* 분석 결과가 있을 때만 요약 표시 */}
                  {result && (
-                     <div className="p-6 bg-emerald-50 rounded-[2rem] border border-emerald-100 text-emerald-800">
+                   <div className="p-6 bg-emerald-50 rounded-lg border border-emerald-100 text-emerald-800">
                          <div className="flex items-center mb-2">
                              <CheckCircle className="w-4 h-4 mr-2" />
                              <span className="text-xs font-black">Sync Completed</span>
@@ -332,7 +332,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
 
         <div className="lg:col-span-8 h-full">
             {isAnalyzing ? (
-                <div className="h-full min-h-[500px] flex flex-col items-center justify-center bg-white rounded-[2.5rem] border border-slate-200 p-12 shadow-sm animate-pulse">
+                <div className="h-full min-h-[500px] flex flex-col items-center justify-center bg-white rounded-xl border border-slate-200 p-12 shadow-sm animate-pulse">
                     <div className="relative mb-10">
                         <div className="w-24 h-24 border-[6px] border-slate-100 border-t-brand-primary rounded-full animate-spin"></div>
                         <Zap className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-brand-primary w-10 h-10" />
@@ -342,7 +342,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
                 </div>
             ) : result ? (
                 <div className="space-y-8 animate-fade-in-up pb-10">
-                    <div className="bg-white p-8 md:p-12 rounded-[3rem] border border-slate-200 shadow-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-8 relative overflow-hidden">
+                    <div className="bg-white p-8 md:p-12 rounded-xl border border-slate-300 shadow-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-8 relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-2 h-full bg-brand-primary"></div>
                         <div className="w-full sm:w-auto">
                             <div className="flex items-center space-x-2 mb-3">
@@ -366,7 +366,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm min-h-[400px] flex flex-col relative overflow-hidden group">
+                        <div className="bg-white p-8 rounded-xl border border-slate-300 shadow-sm min-h-[400px] flex flex-col relative overflow-hidden group">
                              <h4 className="font-black text-slate-800 text-xs flex items-center mb-8 uppercase tracking-widest relative z-10"><AlertOctagon className="w-4 h-4 mr-3 text-brand-accent" /> Risk Analysis Profile</h4>
                              <div className="flex-1 relative z-10">
                                 <ResponsiveContainer width="100%" height="100%">
@@ -395,7 +395,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
                              <div className="absolute top-0 right-0 w-64 h-64 bg-brand-primary/5 rounded-full blur-[80px] -mr-32 -mt-32"></div>
                         </div>
 
-                        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col">
+                        <div className="bg-white p-8 rounded-xl border border-slate-300 shadow-sm flex flex-col">
                              <h4 className="font-black text-slate-800 text-xs flex items-center mb-6 uppercase tracking-widest"><ClipboardList className="w-4 h-4 mr-3 text-brand-primary" /> Structional Synthesis</h4>
                              <div className="bg-slate-50 p-6 rounded-2xl text-[14px] text-slate-600 leading-relaxed border border-slate-100 font-bold mb-8 shadow-inner">
                                  {result.summary}
@@ -415,8 +415,8 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
                                              </div>
                                              {s.deadUnitLogic ? (
                                                 <div className="text-right">
-                                                   <span className="text-[10px] bg-orange-50 text-brand-accent font-black px-3 py-1.5 rounded-lg border border-orange-100 flex items-center">
-                                                     <AlertTriangle className="w-3 h-3 mr-1.5" /> {s.deadUnitLogic}
+                                                   <span className="text-[10px] bg-orange-50 text-brand-accent font-black px-3 py-1.5 rounded-lg border border-orange-200 flex items-center shadow-glow animate-pulse">
+                                                     <Sparkles className="w-3 h-3 mr-1.5" /> {s.deadUnitLogic}
                                                    </span>
                                                 </div>
                                              ) : (
@@ -453,7 +453,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ onAnalysisComplete, buildin
                     </div>
                 </div>
             ) : (
-                <div className="flex-1 h-full min-h-[500px] flex flex-col items-center justify-center text-slate-400 bg-white rounded-[2.5rem] border border-slate-200 border-dashed p-12">
+                <div className="flex-1 h-full min-h-[500px] flex flex-col items-center justify-center text-slate-400 bg-white rounded-xl border border-slate-300 border-dashed p-12">
                     <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mb-8 opacity-40">
                       <ImageIcon className="w-10 h-10" />
                     </div>

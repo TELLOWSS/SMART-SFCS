@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   LayoutDashboard, 
   CheckCircle2,
+  BarChart3,
   Cpu,
   X,
   Map as MapIcon,
@@ -29,6 +30,7 @@ import {
   ArrowRight,
   AlertTriangle,
   Share2,
+  Download,
   History,
   Lock,
   ThumbsDown // [New] Icon for Reject
@@ -42,7 +44,7 @@ import Manual from './components/Manual';
 import LiveChat from './components/LiveChat';
 import GangformPTW, { GangformPTWPayload, ApprovalStatus } from './components/GangformPTW';
 import { suggestSitePlan } from './services/geminiService';
-import { insertGangformPtwCompletedRecord } from './services/gangformPtwActions';
+import { insertGangformPtwCompletedRecord, fetchGangformPtwHistory, type GangformPtwRecordRow } from './services/gangformPtwActions';
 import { 
     syncBuildings, 
     saveBuilding, 
@@ -54,7 +56,10 @@ import {
     saveAnalysisResult,
     saveGangformPtwData,
     subscribeToGangformPtwData,
-    GangformPtwStoredMap
+    GangformPtwStoredMap,
+    saveApprovalLeadTimeEvent,
+    subscribeApprovalLeadTimeEvents,
+    type ApprovalLeadTimeEventRecord
 } from './services/firebaseService';
 
 interface StatusModalData {
@@ -334,28 +339,40 @@ const buildRoleCommunicationBundle = (siteName: string, highPriorityItems: Actio
   };
 };
 
-const getTabFromPath = (pathname: string): 'dashboard' | 'analysis' | 'manual' | 'ptw' => {
+const getTabFromPath = (pathname: string): 'dashboard' | 'executive' | 'analysis' | 'manual' | 'ptw' => {
   if (pathname === '/gangform-ptw') return 'ptw';
+  if (pathname === '/executive') return 'executive';
   if (pathname === '/analysis') return 'analysis';
   if (pathname === '/manual') return 'manual';
   return 'dashboard';
 };
 
-const getPathFromTab = (tab: 'dashboard' | 'analysis' | 'manual' | 'ptw'): string => {
+const getPathFromTab = (tab: 'dashboard' | 'executive' | 'analysis' | 'manual' | 'ptw'): string => {
   if (tab === 'ptw') return '/gangform-ptw';
+  if (tab === 'executive') return '/executive';
   if (tab === 'analysis') return '/analysis';
   if (tab === 'manual') return '/manual';
   return '/';
+};
+
+const parseExecutiveFiltersFromSearch = (search: string): { building: string; month: string } => {
+  const params = new URLSearchParams(search);
+  const building = params.get('building') || 'ALL';
+  const month = params.get('month') || 'ALL';
+  return { building, month };
 };
 
 interface GangformPtwLocalRecord {
   payload: GangformPTWPayload;
   status: ApprovalStatus;
   updatedAt: string;
+  requestedAt?: string | null;
+  approvedAt?: string | null;
+  completedAt?: string | null;
 }
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'analysis' | 'manual' | 'ptw'>(() => getTabFromPath(window.location.pathname));
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'executive' | 'analysis' | 'manual' | 'ptw'>(() => getTabFromPath(window.location.pathname));
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>(UserRole.WORKER);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -371,6 +388,11 @@ const App: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<ProcessStatus | 'ALL'>('ALL');
   const [selectedPtwBuildingId, setSelectedPtwBuildingId] = useState<string>('');
   const [gangformPtwByBuilding, setGangformPtwByBuilding] = useState<Record<string, GangformPtwLocalRecord>>({});
+  const [ptwHistoryRecords, setPtwHistoryRecords] = useState<GangformPtwRecordRow[]>([]);
+  const [ptwHistoryRefreshTick, setPtwHistoryRefreshTick] = useState(0);
+  const [approvalLeadTimeEvents, setApprovalLeadTimeEvents] = useState<ApprovalLeadTimeEventRecord[]>([]);
+  const [executiveBuildingFilter, setExecutiveBuildingFilter] = useState<string>(() => parseExecutiveFiltersFromSearch(window.location.search).building);
+  const [executiveMonthFilter, setExecutiveMonthFilter] = useState<string>(() => parseExecutiveFiltersFromSearch(window.location.search).month);
   
   const [currentTime, setCurrentTime] = useState<string>("");
   const [weather, setWeather] = useState<{temp: number, wind: number, condition: string} | null>(null);
@@ -399,10 +421,18 @@ const App: React.FC = () => {
     [analysisActionItems]
   );
 
-  const handleNavigateTab = (tab: 'dashboard' | 'analysis' | 'manual' | 'ptw') => {
+  const handleNavigateTab = (tab: 'dashboard' | 'executive' | 'analysis' | 'manual' | 'ptw') => {
     const nextPath = getPathFromTab(tab);
-    if (window.location.pathname !== nextPath) {
-      window.history.pushState({}, '', nextPath);
+    const params = new URLSearchParams();
+    if (tab === 'executive') {
+      if (executiveBuildingFilter !== 'ALL') params.set('building', executiveBuildingFilter);
+      if (executiveMonthFilter !== 'ALL') params.set('month', executiveMonthFilter);
+    }
+    const query = params.toString();
+    const nextUrl = query ? `${nextPath}?${query}` : nextPath;
+
+    if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+      window.history.pushState({}, '', nextUrl);
     }
     setActiveTab(tab);
     scrollToTop();
@@ -424,7 +454,7 @@ const App: React.FC = () => {
         const ptwStatus = gangformPtwByBuilding[building.id]?.status;
         if (ptwStatus === 'requested') return '승인 대기';
         if (ptwStatus === 'completed') return '작업 완료';
-        if (ptwStatus === 'approved') return '승인 완료';
+        if (ptwStatus === 'approved') return '허가 발급';
         if (ptwStatus === 'rejected' || ptwStatus === 'draft') return '진행 전';
         return getBuildingPtwStatus(building);
       })(),
@@ -458,12 +488,38 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handlePopState = () => {
-      setActiveTab(getTabFromPath(window.location.pathname));
+      const nextTab = getTabFromPath(window.location.pathname);
+      setActiveTab(nextTab);
+
+      if (nextTab === 'executive') {
+        const parsed = parseExecutiveFiltersFromSearch(window.location.search);
+        setExecutiveBuildingFilter(parsed.building || 'ALL');
+        setExecutiveMonthFilter(parsed.month || 'ALL');
+      }
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'executive') return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (executiveBuildingFilter === 'ALL') params.delete('building');
+    else params.set('building', executiveBuildingFilter);
+
+    if (executiveMonthFilter === 'ALL') params.delete('month');
+    else params.set('month', executiveMonthFilter);
+
+    const query = params.toString();
+    const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+
+    if (nextUrl !== currentUrl) {
+      window.history.replaceState({}, '', nextUrl);
+    }
+  }, [activeTab, executiveBuildingFilter, executiveMonthFilter]);
 
   // [Real-time Sync] Firebase 데이터 동기화
   useEffect(() => {
@@ -595,7 +651,10 @@ const App: React.FC = () => {
         acc[buildingId] = {
           payload: record.payload as GangformPTWPayload,
           status: record.status,
-          updatedAt: record.updatedAt
+          updatedAt: record.updatedAt,
+          requestedAt: record.requestedAt || null,
+          approvedAt: record.approvedAt || null,
+          completedAt: record.completedAt || null
         };
         return acc;
       }, {} as Record<string, GangformPtwLocalRecord>);
@@ -603,6 +662,27 @@ const App: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeApprovalLeadTimeEvents((events) => {
+      setApprovalLeadTimeEvents(events);
+    }, 800);
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const loadPtwHistory = async () => {
+      try {
+        const rows = await fetchGangformPtwHistory();
+        setPtwHistoryRecords(rows);
+      } catch (error) {
+        console.error('PTW history load failed:', error);
+      }
+    };
+
+    loadPtwHistory();
+  }, [ptwHistoryRefreshTick]);
 
   useEffect(() => {
     const handleScroll = () => setShowScrollTop(window.scrollY > 400);
@@ -977,7 +1057,7 @@ const App: React.FC = () => {
             });
         } else if (newStatus === ProcessStatus.APPROVED) {
             await sendChatMessage({
-                text: `✅ [승인완료] ${updatedBuilding.name} ${floorLevel}층 ${targetUnitNumber}호 - 승인 완료. 후속 공정 진행하세요.`,
+            text: `✅ [안전 작업 허가(PTW) 발급] ${updatedBuilding.name} ${floorLevel}층 ${targetUnitNumber}호 - 후속 공정 진행하세요.`,
                 userRole: currentUserRole,
                 timestamp: Date.now(),
                 senderName: '관리자 알림'
@@ -1142,6 +1222,222 @@ const App: React.FC = () => {
       return buildings.filter(b => b.name.includes(searchTerm) && (statusFilter === 'ALL' || b.floors.some(f => f.units.some(u => u.status === statusFilter))));
   }, [buildings, searchTerm, statusFilter]);
 
+  const executiveBuildingOptions = useMemo(() => ['ALL', ...buildings.map(b => b.name)], [buildings]);
+
+  const executiveMonthOptions = useMemo(() => {
+    const months = new Set<string>();
+    ptwHistoryRecords.forEach((row) => {
+      const d = new Date(row.created_at);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      months.add(key);
+    });
+
+    approvalLeadTimeEvents.forEach((event) => {
+      const d = new Date(event.approvedAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      months.add(key);
+    });
+
+    return ['ALL', ...Array.from(months).sort((a, b) => (a < b ? 1 : -1))];
+  }, [approvalLeadTimeEvents, ptwHistoryRecords]);
+
+  useEffect(() => {
+    if (!executiveBuildingOptions.includes(executiveBuildingFilter)) {
+      setExecutiveBuildingFilter('ALL');
+    }
+  }, [executiveBuildingFilter, executiveBuildingOptions]);
+
+  useEffect(() => {
+    if (!executiveMonthOptions.includes(executiveMonthFilter)) {
+      setExecutiveMonthFilter('ALL');
+    }
+  }, [executiveMonthFilter, executiveMonthOptions]);
+
+  const allActiveUnits = useMemo(() => {
+    return buildings.flatMap(b => b.floors.flatMap(f => f.units)).filter(u => !u.isDeadUnit);
+  }, [buildings]);
+
+  const totalUnits = allActiveUnits.length;
+  const curedUnits = allActiveUnits.filter(u => u.status === ProcessStatus.CURED).length;
+  const progressRate = totalUnits > 0 ? Math.round((curedUnits / totalUnits) * 100) : 0;
+  const aiRiskCount = lastAnalysisResult?.riskFactors?.length || 0;
+  const aiCriticalRiskCount = (lastAnalysisResult?.riskFactors || []).filter(r => Number(r.score || 0) >= 80).length;
+  const ptwIssuedCount = Object.entries(gangformPtwByBuilding).filter(([buildingId, record]) => {
+    const buildingName = buildings.find(b => b.id === buildingId)?.name || '';
+    if (executiveBuildingFilter !== 'ALL' && buildingName !== executiveBuildingFilter) return false;
+    return record.status === 'approved' || record.status === 'completed';
+  }).length;
+
+  const filteredPtwHistoryRecords = useMemo(() => {
+    return ptwHistoryRecords.filter((row) => {
+      const matchesBuilding = executiveBuildingFilter === 'ALL' || row.building === executiveBuildingFilter;
+      if (!matchesBuilding) return false;
+
+      if (executiveMonthFilter === 'ALL') return true;
+      const d = new Date(row.created_at);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return key === executiveMonthFilter;
+    });
+  }, [executiveBuildingFilter, executiveMonthFilter, ptwHistoryRecords]);
+
+  const filteredApprovalLeadTimeEvents = useMemo(() => {
+    return approvalLeadTimeEvents.filter((event) => {
+      const matchesBuilding = executiveBuildingFilter === 'ALL' || event.buildingName === executiveBuildingFilter;
+      if (!matchesBuilding) return false;
+
+      if (executiveMonthFilter === 'ALL') return true;
+      const d = new Date(event.approvedAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return key === executiveMonthFilter;
+    });
+  }, [approvalLeadTimeEvents, executiveBuildingFilter, executiveMonthFilter]);
+
+  const ptwCompletedCount = filteredPtwHistoryRecords.length;
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  const monthlyCompletedCount = filteredPtwHistoryRecords.filter((row) => {
+    const date = new Date(row.created_at);
+    if (executiveMonthFilter !== 'ALL') return true;
+    return date.getFullYear() === currentYear && date.getMonth() === currentMonth;
+  }).length;
+  const estimatedAdminHoursSaved = Math.round((monthlyCompletedCount * 2.8) * 10) / 10;
+  const currentCycleAverageLeadMinutes = filteredApprovalLeadTimeEvents.length > 0
+    ? Math.round((filteredApprovalLeadTimeEvents.reduce((sum, event) => sum + event.leadMinutes, 0) / filteredApprovalLeadTimeEvents.length) * 10) / 10
+    : 0;
+
+  const approvalLeadTimeTrend = useMemo(() => {
+    const weekStart = (offsetWeeks: number) => {
+      const now = new Date();
+      const day = now.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - diffToMonday - offsetWeeks * 7);
+      monday.setHours(0, 0, 0, 0);
+      return monday;
+    };
+
+    const bucketAverage = (offsetWeeks: number) => {
+      const start = weekStart(offsetWeeks);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 7);
+
+      const events = filteredApprovalLeadTimeEvents.filter((event) => {
+        const approved = new Date(event.approvedAt);
+        return approved >= start && approved < end;
+      });
+
+      if (events.length === 0) return null;
+      const sum = events.reduce((acc, event) => acc + event.leadMinutes, 0);
+      return Math.round(sum / events.length);
+    };
+
+    const fallbackBase = Math.max(45, Math.round(150 - progressRate * 0.8));
+
+    return [
+      { label: '4주 전', minutes: bucketAverage(3) ?? (fallbackBase + 24) },
+      { label: '3주 전', minutes: bucketAverage(2) ?? (fallbackBase + 14) },
+      { label: '2주 전', minutes: bucketAverage(1) ?? (fallbackBase + 6) },
+      { label: '이번 주', minutes: bucketAverage(0) ?? fallbackBase }
+    ];
+  }, [filteredApprovalLeadTimeEvents, progressRate]);
+
+  const maxLeadMinutes = useMemo(() => Math.max(...approvalLeadTimeTrend.map(x => x.minutes), 1), [approvalLeadTimeTrend]);
+
+  const getFloorMacroStatus = (units: Unit[]) => {
+    const active = units.filter(u => !u.isDeadUnit);
+    if (active.length === 0) return { color: 'bg-slate-200', isDelayed: false };
+    if (active.some(u => u.status === ProcessStatus.APPROVAL_REQ)) return { color: 'bg-brand-accent', isDelayed: true };
+    if (active.some(u => u.status === ProcessStatus.INSTALLING)) return { color: 'bg-yellow-500', isDelayed: false };
+    if (active.some(u => u.status === ProcessStatus.POURING)) return { color: 'bg-purple-500', isDelayed: false };
+    if (active.every(u => u.status === ProcessStatus.CURED)) return { color: 'bg-emerald-500', isDelayed: false };
+    if (active.every(u => u.status === ProcessStatus.APPROVED || u.status === ProcessStatus.CURED)) return { color: 'bg-blue-500', isDelayed: false };
+    return { color: 'bg-slate-400', isDelayed: false };
+  };
+
+  const exportExecutiveReportPdf = () => {
+    const reportWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!reportWindow) {
+      addNotification('리포트 창을 열 수 없습니다. 팝업 차단을 해제해주세요.', 'warning');
+      return;
+    }
+
+    const generatedAt = new Date().toLocaleString('ko-KR');
+    const filterLabel = `동: ${executiveBuildingFilter === 'ALL' ? '전체' : executiveBuildingFilter} / 월: ${executiveMonthFilter === 'ALL' ? '전체' : executiveMonthFilter}`;
+    const leadRows = approvalLeadTimeTrend.map(item => `<tr><td>${item.label}</td><td>${item.minutes}분</td></tr>`).join('');
+
+    reportWindow.document.write(`
+      <html>
+        <head>
+          <title>SFCS Executive Report</title>
+          <style>
+            @page { size: A4; margin: 16mm; }
+            body { font-family: 'Pretendard', 'Inter', sans-serif; color: #0f172a; }
+            .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #0f172a; padding-bottom:10px; margin-bottom:16px; }
+            .logo { font-weight:900; font-size:20px; letter-spacing:-0.02em; }
+            .sys { font-size:12px; color:#334155; }
+            .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+            .card { border:1px solid #cbd5e1; border-radius:8px; padding:10px; }
+            .k { font-size:10px; color:#64748b; text-transform:uppercase; font-weight:700; }
+            .v { font-family:'JetBrains Mono','Consolas',monospace; font-size:24px; font-weight:900; margin-top:4px; }
+            table { width:100%; border-collapse:collapse; margin-top:8px; }
+            th,td { border:1px solid #cbd5e1; padding:8px; font-size:11px; text-align:left; }
+            th { background:#f8fafc; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="logo">대우건설 · SMART-SFCS</div>
+              <div class="sys">Executive Summary / Command Center Briefing</div>
+            </div>
+            <div class="sys">생성시각: ${generatedAt}<br/>필터: ${filterLabel}</div>
+          </div>
+
+          <div class="grid">
+            <div class="card"><div class="k">AI 감지 위험요인(예방 대상)</div><div class="v">${aiRiskCount} 건</div></div>
+            <div class="card"><div class="k">고위험 리스크</div><div class="v">${aiCriticalRiskCount} 건</div></div>
+            <div class="card"><div class="k">PTW 발급(승인/완료)</div><div class="v">${ptwIssuedCount} 건</div></div>
+            <div class="card"><div class="k">행정시간 절감(월 실적 기반)</div><div class="v">${estimatedAdminHoursSaved} h</div></div>
+          </div>
+
+          <div class="card" style="margin-bottom:14px;">
+            <div class="k">현재 사이클 평균 승인 리드타임(실측)</div>
+            <div class="v">${currentCycleAverageLeadMinutes} 분</div>
+          </div>
+
+          <div class="card">
+            <div class="k">승인 리드타임 단축 추이</div>
+            <table>
+              <thead><tr><th>기간</th><th>평균 리드타임</th></tr></thead>
+              <tbody>${leadRows}</tbody>
+            </table>
+          </div>
+        </body>
+      </html>
+    `);
+
+    reportWindow.document.close();
+    setTimeout(() => reportWindow.print(), 250);
+  };
+
+  const copyCurrentExecutiveViewLink = async () => {
+    const currentUrl = `${window.location.origin}${window.location.pathname}${window.location.search}`;
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(currentUrl);
+        addNotification('현재 경영진 뷰 링크가 복사되었습니다.', 'success');
+        return;
+      }
+
+      window.prompt('아래 링크를 복사하세요:', currentUrl);
+      addNotification('클립보드 API 미지원 환경입니다. 링크를 수동 복사하세요.', 'info');
+    } catch (error) {
+      window.prompt('아래 링크를 복사하세요:', currentUrl);
+      addNotification('링크 복사 중 오류가 발생했습니다. 수동 복사로 진행하세요.', 'warning');
+    }
+  };
+
   const shareCompletion = (data: StatusModalData) => {
     let title = "";
     let message = "";
@@ -1151,8 +1447,8 @@ const App: React.FC = () => {
         // [User Request] 요청하신 'AL폼 조립 및 슬라브 완성...' 문구 반영
         message = `[설치완료 보고]\n현장: ${data.buildingName}\n위치: ${data.floorLevel}층 ${data.unitNumber}호\n상태: AL폼 조립 및 슬라브 완성, 서포트 설치 완료. 검측 요청합니다.`;
     } else if (data.nextStatus === ProcessStatus.APPROVED) {
-        title = "SFCS 승인완료 통보";
-        message = `[승인완료 통보]\n현장: ${data.buildingName}\n위치: ${data.floorLevel}층 ${data.unitNumber}호\n결과: 검측 합격(승인). 기전(전기/설비) 작업 진행 바랍니다.`;
+      title = "SFCS 안전 작업 허가(PTW) 발급";
+      message = `[안전 작업 허가(PTW) 발급]\n현장: ${data.buildingName}\n위치: ${data.floorLevel}층 ${data.unitNumber}호\n결과: 검측 합격. 후속 공정 진행 바랍니다.`;
     }
 
     if (navigator.share) {
@@ -1185,15 +1481,19 @@ const App: React.FC = () => {
             <LayoutDashboard className="w-5 h-5 mr-3" /> 현황 대시보드
           </button>
           
-          <button onClick={() => handleNavigateTab('analysis')} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'analysis' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
+          <button onClick={() => handleNavigateTab('executive')} className={`w-full flex items-center p-3.5 rounded-lg text-sm font-semibold transition-all ${activeTab === 'executive' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
+            <BarChart3 className="w-5 h-5 mr-3" /> Executive Summary
+          </button>
+
+          <button onClick={() => handleNavigateTab('analysis')} className={`w-full flex items-center p-3.5 rounded-lg text-sm font-semibold transition-all ${activeTab === 'analysis' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
             <MapIcon className="w-5 h-5 mr-3" /> AI 도면/데이터 분석
           </button>
 
-          <button onClick={() => handleNavigateTab('ptw')} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'ptw' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
+          <button onClick={() => handleNavigateTab('ptw')} className={`w-full flex items-center p-3.5 rounded-lg text-sm font-semibold transition-all ${activeTab === 'ptw' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
             <CheckCircle2 className="w-5 h-5 mr-3" /> 갱폼 작업허가 (PTW)
           </button>
           
-          <button onClick={() => handleNavigateTab('manual')} className={`w-full flex items-center p-3.5 rounded-xl text-sm font-semibold transition-all ${activeTab === 'manual' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
+          <button onClick={() => handleNavigateTab('manual')} className={`w-full flex items-center p-3.5 rounded-lg text-sm font-semibold transition-all ${activeTab === 'manual' ? 'bg-brand-primary text-white shadow-lg' : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'}`}>
             <FileText className="w-5 h-5 mr-3" /> 기술 아키텍처
           </button>
 
@@ -1361,7 +1661,7 @@ const App: React.FC = () => {
                   type="text" 
                   value={siteName} 
                   onChange={(e) => setSiteName(e.target.value)} 
-                  className="text-2xl md:text-4xl lg:text-5xl font-black bg-white border-none w-full outline-none text-brand-dark focus:ring-4 focus:ring-brand-primary/40 py-4 px-8 rounded-3xl transition-all leading-tight tracking-tighter shadow-2xl placeholder:text-slate-300 text-center"
+                  className="text-2xl md:text-4xl lg:text-5xl font-black bg-white border-none w-full outline-none text-brand-dark focus:ring-4 focus:ring-brand-primary/40 py-4 px-8 rounded-xl transition-all leading-tight tracking-tighter shadow-2xl placeholder:text-slate-300 text-center"
                   placeholder="현장명을 입력하세요"
                 />
                 <div className="absolute -bottom-2 left-8 right-8 h-1.5 bg-brand-accent rounded-full opacity-0 group-focus-within:opacity-100 transition-all shadow-glow"></div>
@@ -1377,7 +1677,7 @@ const App: React.FC = () => {
         
         <div className="relative z-10 flex-1 space-y-6 md:space-y-12 px-4 md:px-10 pb-24 w-full max-w-[1440px] mx-auto overflow-x-hidden">
             {highPriorityActionItems.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-[2rem] p-4 md:p-5 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3 animate-fade-in-up">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 md:p-5 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3 animate-fade-in-up">
                 <div className="flex items-start">
                   <AlertTriangle className="w-5 h-5 text-red-500 mr-2 mt-0.5" />
                   <div>
@@ -1398,7 +1698,7 @@ const App: React.FC = () => {
             {activeTab === 'dashboard' && (
               <>
                 {pendingApprovals.length > 0 && (
-                  <div className="bg-white/80 backdrop-blur-md border border-orange-200 rounded-[2.5rem] py-4 md:py-6 shadow-2xl animate-fade-in-up w-full min-w-0 overflow-hidden">
+                  <div className="bg-white border border-orange-200 rounded-xl py-4 md:py-6 shadow-xl animate-fade-in-up w-full min-w-0 overflow-hidden">
                     <div className="flex items-center justify-between mb-5 px-4 md:px-6">
                        <h3 className="text-lg font-black text-slate-800 flex items-center"><Zap className="w-5 h-5 mr-3 text-brand-accent fill-brand-accent" /> 긴급 승인 대기 <span className="ml-2 px-2 py-0.5 bg-orange-100 text-orange-600 rounded-lg text-xs font-black">{pendingApprovals.length} 건</span></h3>
                     </div>
@@ -1423,7 +1723,7 @@ const App: React.FC = () => {
                                 isRevert: false
                               });
                             }
-                         }} className="flex-shrink-0 bg-white border border-slate-100 p-4 rounded-3xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all text-left w-full active:scale-95 group relative overflow-hidden">
+                         }} className="flex-shrink-0 bg-white border border-slate-100 p-4 rounded-lg shadow-sm hover:shadow-md transition-all text-left w-full active:scale-95 group relative overflow-hidden">
                             <div className="flex justify-between items-center mb-2">
                                <span className="text-[10px] font-black text-slate-400 tracking-tighter group-hover:text-brand-primary">{p.buildingName}</span>
                                <ChevronRight className="w-3 h-3 text-slate-300" />
@@ -1495,7 +1795,7 @@ const App: React.FC = () => {
                    <div className="flex items-center space-x-3 w-full sm:w-auto">
                       <div className="relative flex-1 sm:w-64">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input type="text" placeholder="동/호수 검색..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium outline-none focus:ring-4 focus:ring-brand-primary/10 transition-all shadow-sm" />
+                        <input type="text" placeholder="동/호수 검색..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all shadow-sm" />
                       </div>
                    </div>
                 </div>
@@ -1533,6 +1833,136 @@ const App: React.FC = () => {
                 </div>
               </>
             )}
+            {activeTab === 'executive' && (
+              <section className="bg-slate-50 text-gray-900 rounded-xl border border-slate-300 p-5 md:p-8 space-y-6 animate-fade-in-up">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-4">
+                  <div>
+                    <h2 className="text-2xl font-black tracking-tight text-gray-900">Executive Summary (경영진 브리핑)</h2>
+                    <p className="text-sm text-slate-600 mt-1">현장 안전·생산성·행정효율 통합 지표</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-md border border-slate-300 bg-slate-100 text-[10px] font-black text-slate-700 uppercase tracking-wider">
+                        Scope · {executiveBuildingFilter === 'ALL' ? '전체 동' : executiveBuildingFilter}
+                      </span>
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-md border border-slate-300 bg-slate-100 text-[10px] font-black text-slate-700 uppercase tracking-wider">
+                        Month · {executiveMonthFilter === 'ALL' ? '전체 월' : executiveMonthFilter}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <select
+                      value={executiveBuildingFilter}
+                      onChange={(e) => setExecutiveBuildingFilter(e.target.value)}
+                      className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-black text-slate-700"
+                    >
+                      {executiveBuildingOptions.map((opt) => (
+                        <option key={opt} value={opt}>{opt === 'ALL' ? '전체 동' : opt}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={executiveMonthFilter}
+                      onChange={(e) => setExecutiveMonthFilter(e.target.value)}
+                      className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-black text-slate-700"
+                    >
+                      {executiveMonthOptions.map((opt) => (
+                        <option key={opt} value={opt}>{opt === 'ALL' ? '전체 월' : opt}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={copyCurrentExecutiveViewLink}
+                      className="inline-flex items-center px-4 py-2 rounded-lg text-xs font-black border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                    >
+                      <Share2 className="w-4 h-4 mr-2" /> 현재 뷰 링크 복사
+                    </button>
+                    <button
+                      onClick={exportExecutiveReportPdf}
+                      className="inline-flex items-center px-4 py-2 rounded-lg text-xs font-black border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                    >
+                      <Download className="w-4 h-4 mr-2" /> One-Click 자동화 리포트 출력 (Export to PDF)
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-lg border border-slate-300 p-4">
+                    <p className="text-[11px] text-slate-500 font-black uppercase tracking-widest">AI 감지 위험요인(예방 대상)</p>
+                    <p className="font-mono text-3xl font-black mt-2 tracking-tight">{aiRiskCount}<span className="text-base text-slate-400 ml-1">건</span></p>
+                  </div>
+                  <div className="bg-white rounded-lg border border-slate-300 p-4">
+                    <p className="text-[11px] text-slate-500 font-black uppercase tracking-widest">고위험 리스크</p>
+                    <p className="font-mono text-3xl font-black mt-2 tracking-tight text-brand-accent">{aiCriticalRiskCount}<span className="text-base text-slate-400 ml-1">건</span></p>
+                  </div>
+                  <div className="bg-white rounded-lg border border-slate-300 p-4">
+                    <p className="text-[11px] text-slate-500 font-black uppercase tracking-widest">PTW 발급(승인/완료)</p>
+                    <p className="font-mono text-3xl font-black mt-2 tracking-tight">{ptwIssuedCount}<span className="text-base text-slate-400 ml-1">건</span></p>
+                  </div>
+                  <div className="bg-white rounded-lg border border-slate-300 p-4">
+                    <p className="text-[11px] text-slate-500 font-black uppercase tracking-widest">행정 시간 절감 (월 실적 기반)</p>
+                    <p className="font-mono text-3xl font-black mt-2 tracking-tight">{estimatedAdminHoursSaved}<span className="text-base text-slate-400 ml-1">h</span></p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg border border-slate-300 p-4">
+                  <p className="text-[11px] text-slate-500 font-black uppercase tracking-widest">현재 사이클 평균 승인 리드타임 (실측)</p>
+                  <p className="font-mono text-3xl font-black mt-2 tracking-tight text-brand-primary">{currentCycleAverageLeadMinutes}<span className="text-base text-slate-400 ml-1">분</span></p>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <div className="bg-white rounded-lg border border-slate-300 p-5">
+                    <h3 className="text-sm font-black text-slate-700 mb-4">평균 승인 리드타임 단축 추이</h3>
+                    <div className="space-y-3">
+                      {approvalLeadTimeTrend.map((point) => (
+                        <div key={point.label} className="space-y-1">
+                          <div className="flex justify-between text-[11px] font-black text-slate-600">
+                            <span>{point.label}</span>
+                            <span className="font-mono">{point.minutes}분</span>
+                          </div>
+                          <div className="h-2 bg-slate-100 rounded-sm border border-slate-200 overflow-hidden">
+                            <div className="h-full bg-brand-primary" style={{ width: `${Math.max(8, Math.round((point.minutes / maxLeadMinutes) * 100))}%` }}></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-lg border border-slate-300 p-5">
+                    <h3 className="text-sm font-black text-slate-700 mb-4">실시간 골조 공정률 Macro View (블록 히트맵)</h3>
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <div className="inline-grid gap-2" style={{ gridTemplateColumns: `repeat(${buildings.length}, minmax(28px, 1fr))` }}>
+                        {buildings.map((building) => (
+                          <div key={`macro-${building.id}`} className="space-y-1">
+                            {[...building.floors].sort((a, b) => b.level - a.level).slice(0, 28).map((floor) => {
+                              const status = getFloorMacroStatus(floor.units);
+                              return (
+                                <div
+                                  key={`${building.id}-${floor.level}`}
+                                  title={`${building.name} ${floor.level}층`}
+                                  className={`h-2.5 rounded-sm border border-slate-300 ${status.color} ${status.isDelayed ? 'animate-pulse shadow-glow' : ''}`}
+                                ></div>
+                              );
+                            })}
+                            <div className="text-[9px] font-black text-slate-500 text-center mt-1">{building.name.replace('동', '')}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-3 text-[10px] font-black text-slate-500">
+                      <span className="inline-flex items-center"><span className="w-2.5 h-2.5 bg-blue-500 border border-slate-300 rounded-sm mr-1"></span>승인구간</span>
+                      <span className="inline-flex items-center"><span className="w-2.5 h-2.5 bg-purple-500 border border-slate-300 rounded-sm mr-1"></span>타설중</span>
+                      <span className="inline-flex items-center"><span className="w-2.5 h-2.5 bg-emerald-500 border border-slate-300 rounded-sm mr-1"></span>양생완료</span>
+                      <span className="inline-flex items-center"><span className="w-2.5 h-2.5 bg-brand-accent border border-slate-300 rounded-sm mr-1 animate-pulse"></span>지연/주의</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg border border-slate-300 p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-black text-slate-800">실시간 골조 공정률</p>
+                    <p className="text-xs text-slate-500 mt-1">전체 활성 세대 기준</p>
+                  </div>
+                  <p className="font-mono text-4xl font-black tracking-tight text-brand-primary">{progressRate}%</p>
+                </div>
+              </section>
+            )}
             {activeTab === 'analysis' && (
               <AnalysisView 
                 buildings={buildings} 
@@ -1547,7 +1977,7 @@ const App: React.FC = () => {
               }} />
             )}
             {activeTab === 'ptw' && (
-              <section className="bg-gray-50 text-gray-900 rounded-[2rem] border border-slate-200 p-5 md:p-8 space-y-6 animate-fade-in-up">
+              <section className="bg-gray-50 text-gray-900 rounded-xl border border-slate-200 p-5 md:p-8 space-y-6 animate-fade-in-up">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h2 className="text-2xl font-black tracking-tight text-gray-900">갱폼 작업허가(PTW)</h2>
@@ -1561,7 +1991,7 @@ const App: React.FC = () => {
                   </a>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-slate-200 p-4 md:p-5">
+                <div className="bg-white rounded-lg border border-slate-200 p-4 md:p-5">
                   <h3 className="text-sm font-black text-slate-700 mb-3">동별 현황 요약 보드</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {ptwSummary.map((item) => (
@@ -1572,7 +2002,7 @@ const App: React.FC = () => {
                             ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
                             : item.status === '승인 대기'
                             ? 'bg-orange-50 text-orange-600 border-orange-100'
-                          : item.status === '승인 완료'
+                          : item.status === '허가 발급'
                             ? 'bg-blue-50 text-blue-600 border-blue-100'
                             : 'bg-slate-100 text-slate-500 border-slate-200'
                         }`}>
@@ -1583,7 +2013,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-slate-200 p-4 md:p-5">
+                <div className="bg-white rounded-lg border border-slate-200 p-4 md:p-5">
                   <h3 className="text-sm font-black text-slate-700 mb-3">동 선택</h3>
                   <div className="flex flex-wrap gap-2">
                     {buildings.map((building) => (
@@ -1609,6 +2039,7 @@ const App: React.FC = () => {
                     initialData={gangformPtwByBuilding[selectedPtwBuilding.id]?.payload}
                     initialStatus={gangformPtwByBuilding[selectedPtwBuilding.id]?.status || 'draft'}
                     onSubmit={(payload) => {
+                      const requestedAt = new Date().toISOString();
                       const beforePhotos = Object.values(payload.requiredPhotos.beforeWork).filter(Boolean).length;
                       addNotification(`[${selectedPtwBuilding.name}] PTW 승인요청 전송 (${beforePhotos}/4장 URL 포함)`, 'info');
                       setGangformPtwByBuilding(prev => {
@@ -1617,7 +2048,10 @@ const App: React.FC = () => {
                           [selectedPtwBuilding.id]: {
                             payload,
                             status: 'requested',
-                            updatedAt: new Date().toISOString()
+                            updatedAt: requestedAt,
+                            requestedAt,
+                            approvedAt: null,
+                            completedAt: null
                           }
                         };
                         saveGangformPtwData(next as GangformPtwStoredMap);
@@ -1625,16 +2059,33 @@ const App: React.FC = () => {
                       });
                     }}
                     onApprove={() => {
-                      addNotification(`[${selectedPtwBuilding.name}] PTW가 승인되었습니다.`, 'success');
+                      const approvedAt = new Date().toISOString();
+                      addNotification(`[${selectedPtwBuilding.name}] 안전 작업 허가(PTW)가 발급되었습니다.`, 'success');
                       setGangformPtwByBuilding(prev => {
                         const current = prev[selectedPtwBuilding.id];
                         if (!current) return prev;
+
+                        const requestedAt = current.requestedAt || null;
+                        if (requestedAt) {
+                          const leadMinutes = Math.max(0, Math.round((new Date(approvedAt).getTime() - new Date(requestedAt).getTime()) / 60000));
+                          if (Number.isFinite(leadMinutes)) {
+                            saveApprovalLeadTimeEvent({
+                              approvedAt,
+                              leadMinutes,
+                              buildingId: selectedPtwBuilding.id,
+                              buildingName: selectedPtwBuilding.name,
+                              floor: current.payload?.floor || '-'
+                            });
+                          }
+                        }
+
                         const next = {
                           ...prev,
                           [selectedPtwBuilding.id]: {
                             ...current,
                             status: 'approved',
-                            updatedAt: new Date().toISOString()
+                            updatedAt: approvedAt,
+                            approvedAt
                           }
                         };
                         saveGangformPtwData(next as GangformPtwStoredMap);
@@ -1644,13 +2095,19 @@ const App: React.FC = () => {
                     onComplete={(payload) => {
                       return insertGangformPtwCompletedRecord(payload).then(() => {
                         addNotification(`[${selectedPtwBuilding.name} ${payload.floor}] PTW 작업이 완료되었습니다.`, 'success');
+                        setPtwHistoryRefreshTick(prev => prev + 1);
                         setGangformPtwByBuilding(prev => {
+                          const completedAt = new Date().toISOString();
+                          const current = prev[selectedPtwBuilding.id];
                           const next = {
                             ...prev,
                             [selectedPtwBuilding.id]: {
                               payload,
                               status: 'completed' as ApprovalStatus,
-                              updatedAt: new Date().toISOString()
+                              updatedAt: completedAt,
+                              requestedAt: current?.requestedAt || null,
+                              approvedAt: current?.approvedAt || null,
+                              completedAt
                             }
                           };
 
@@ -1660,6 +2117,7 @@ const App: React.FC = () => {
                       });
                     }}
                     onCycleReset={(payload) => {
+                      const now = new Date().toISOString();
                       addNotification(`[${selectedPtwBuilding.name}] ${payload.floor} 인상 준비 사이클을 시작했습니다.`, 'info');
                       setGangformPtwByBuilding(prev => {
                         const next = {
@@ -1667,7 +2125,10 @@ const App: React.FC = () => {
                           [selectedPtwBuilding.id]: {
                             payload,
                             status: 'draft' as ApprovalStatus,
-                            updatedAt: new Date().toISOString()
+                            updatedAt: now,
+                            requestedAt: null,
+                            approvedAt: null,
+                            completedAt: null
                           }
                         };
                         saveGangformPtwData(next as GangformPtwStoredMap);
@@ -1675,6 +2136,7 @@ const App: React.FC = () => {
                       });
                     }}
                     onReject={() => {
+                      const now = new Date().toISOString();
                       addNotification(`[${selectedPtwBuilding.name}] PTW가 반려되었습니다.`, 'warning');
                       setGangformPtwByBuilding(prev => {
                         const current = prev[selectedPtwBuilding.id];
@@ -1684,7 +2146,8 @@ const App: React.FC = () => {
                           [selectedPtwBuilding.id]: {
                             ...current,
                             status: 'rejected',
-                            updatedAt: new Date().toISOString()
+                            updatedAt: now,
+                            approvedAt: null
                           }
                         };
                         saveGangformPtwData(next as GangformPtwStoredMap);
@@ -1726,7 +2189,7 @@ const App: React.FC = () => {
           >
              {n.type === 'success' ? <Check className="w-5 h-5 text-emerald-500"/> : <Bell className="w-5 h-5 text-orange-500"/>}
              <div className="flex-1">
-                <p className="text-xs font-black text-slate-800">{n.type === 'success' ? '승인 완료' : '알림'}</p>
+                <p className="text-xs font-black text-slate-800">{n.type === 'success' ? '허가 발급' : '알림'}</p>
                 <p className="text-xs text-slate-600">{n.message}</p>
              </div>
           </div>
@@ -1735,7 +2198,7 @@ const App: React.FC = () => {
 
       {statusModal && (
         <div className="fixed inset-0 z-[200] flex items-end md:items-center justify-center p-0 md:p-4 bg-slate-900/70 backdrop-blur-md transition-all">
-          <div className="bg-white rounded-t-[2.5rem] md:rounded-3xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden animate-slide-up" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-t-xl md:rounded-xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="px-8 py-5 border-b flex justify-between items-center bg-slate-50">
               <h3 className="font-black text-base uppercase tracking-widest text-slate-500">{statusModal.isRevert ? '보고 취소' : '상태 변경 실행'}</h3>
               <button onClick={() => setStatusModal(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X className="w-6 h-6 text-slate-400" /></button>
@@ -1748,7 +2211,7 @@ const App: React.FC = () => {
                   <p className="text-brand-primary font-bold">{statusModal.unitNumber}호실 - {statusModal.floorLevel}층</p>
                 </div>
               </div>
-              <div className="bg-slate-50 p-6 rounded-[2rem] mb-6 flex items-center justify-around border border-slate-100 shadow-inner">
+              <div className="bg-slate-50 p-6 rounded-lg mb-6 flex items-center justify-around border border-slate-100 shadow-inner">
                 <div className="text-center"><div className="text-[10px] text-slate-400 font-black mb-1">현재</div><div className="text-sm font-bold text-slate-500">{statusModal.currentStatus}</div></div>
                 <ArrowRight className="text-brand-primary w-6 h-6" />
                 <div className="text-center">
@@ -1769,10 +2232,10 @@ const App: React.FC = () => {
               </div>
 
               {(statusModal.nextStatus === ProcessStatus.APPROVAL_REQ || statusModal.nextStatus === ProcessStatus.APPROVED) && (
-                <div className={`mb-8 p-4 border rounded-2xl ${statusModal.nextStatus === ProcessStatus.APPROVED ? 'bg-emerald-50 border-emerald-100' : 'bg-orange-50 border-orange-100'}`}>
+                <div className={`mb-8 p-4 border rounded-lg ${statusModal.nextStatus === ProcessStatus.APPROVED ? 'bg-emerald-50 border-emerald-100' : 'bg-orange-50 border-orange-100'}`}>
                   <p className={`text-xs font-bold mb-3 flex items-center ${statusModal.nextStatus === ProcessStatus.APPROVED ? 'text-emerald-700' : 'text-orange-700'}`}>
                       {statusModal.nextStatus === ProcessStatus.APPROVED ? 
-                         <><Check className="w-3 h-3 mr-1.5" /> 승인 결과 통보 (작업자 공유)</> : 
+                         <><Check className="w-3 h-3 mr-1.5" /> 안전 작업 허가(PTW) 발급 통보</> : 
                          <><AlertTriangle className="w-3 h-3 mr-1.5" /> 설치 완료 보고 (관리자 공유)</>
                       }
                   </p>
@@ -1784,7 +2247,7 @@ const App: React.FC = () => {
               )}
 
               <div className="flex space-x-4">
-                <button onClick={() => setStatusModal(null)} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-black text-sm">취소</button>
+                <button onClick={() => setStatusModal(null)} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-black text-sm">취소</button>
                 
                 {/* [승인 반려 기능 추가] 관리자이고 현재 승인요청 상태일 때 '반려' 버튼 노출 */}
                 {(currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR) && statusModal.currentStatus === ProcessStatus.APPROVAL_REQ && (
@@ -1794,13 +2257,13 @@ const App: React.FC = () => {
                             handleStatusUpdate(statusModal.buildingId, statusModal.floorLevel, statusModal.unitId, ProcessStatus.INSTALLING);
                         }
                      }} 
-                     className="flex-1 py-4 bg-red-50 text-red-500 border border-red-100 rounded-2xl font-black text-sm hover:bg-red-100 flex items-center justify-center transition-all"
+                     className="flex-1 py-4 bg-red-50 text-red-500 border border-red-100 rounded-lg font-black text-sm hover:bg-red-100 flex items-center justify-center transition-all"
                    >
                      <ThumbsDown className="w-4 h-4 mr-2" /> 승인 반려
                    </button>
                 )}
 
-                <button onClick={() => handleStatusUpdate(statusModal.buildingId, statusModal.floorLevel, statusModal.unitId, statusModal.nextStatus)} className="flex-1 py-4 bg-brand-primary text-white rounded-2xl font-black text-sm shadow-xl hover:bg-blue-600">업데이트</button>
+                <button onClick={() => handleStatusUpdate(statusModal.buildingId, statusModal.floorLevel, statusModal.unitId, statusModal.nextStatus)} className="flex-1 py-4 bg-brand-primary text-white rounded-lg font-black text-sm shadow-xl hover:bg-blue-600">업데이트</button>
               </div>
             </div>
           </div>

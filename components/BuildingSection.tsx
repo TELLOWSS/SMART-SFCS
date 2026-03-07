@@ -154,7 +154,7 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
 
   return (
     // [디자인 수정] 상단에 공구별 색상 라인 추가 (border-t-[4px])
-    <div className={`bg-white rounded-2xl shadow-tech border border-slate-200 border-t-[4px] ${zone.borderColor} flex flex-col h-full overflow-hidden transition-all hover:shadow-xl`}>
+    <div className={`bg-white rounded-lg shadow-tech border border-slate-200 border-t-[4px] ${zone.borderColor} flex flex-col h-full overflow-hidden transition-all hover:shadow-xl`}>
       <div className="bg-slate-50 px-4 py-3.5 border-b border-slate-200 flex justify-between items-start">
         <div className="flex flex-col">
           <div className="flex items-center gap-2 mb-1">
@@ -228,7 +228,7 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
                     key={`${unit.id}-${unit.status}-${unit.mepCompleted}-${unit.lastUpdated}`}
                     onClick={() => handleAction(floor.level, unit.id, unit.status, !!unit.isDeadUnit, unit.mepCompleted)}
                     disabled={!!unit.isDeadUnit}
-                    className={`relative p-2 md:p-3 rounded-xl border-l-[4px] text-left transition-all active:scale-95 shadow-sm flex flex-col justify-between h-20 md:h-24 overflow-hidden w-full max-w-full min-w-0 ${
+                    className={`relative p-2 md:p-3 rounded-md border-l-[4px] text-left transition-all active:scale-95 shadow-sm flex flex-col justify-between h-20 md:h-24 overflow-hidden w-full max-w-full min-w-0 ${
                       unit.isDeadUnit 
                       ? 'bg-slate-100 border-slate-300 opacity-40 grayscale cursor-not-allowed' 
                       : `bg-white ${STATUS_STYLES[unit.status] || 'border-slate-200'}`

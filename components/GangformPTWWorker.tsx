@@ -507,7 +507,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
               <div key={key} className="rounded-xl border border-slate-200 p-3 bg-slate-50">
                 <p className="text-xs font-bold text-slate-700 mb-2">{key}</p>
                 <label className="inline-flex items-center px-3 py-2 rounded-lg bg-slate-800 text-white text-xs font-bold cursor-pointer">
-                  {isUploading ? '업로드 중...' : '사진 업로드'}
+                  {isUploading ? '동기화 중...' : '현장 증빙 데이터 동기화'}
                   <input
                     type="file"
                     accept="image/*"
@@ -535,7 +535,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
         disabled={!workerReadyForRequest || status !== 'draft' || isSubmitting}
         className="w-full py-3 rounded-xl bg-blue-600 text-white font-black text-sm disabled:opacity-40"
       >
-        승인 요청
+        안전 작업 허가(PTW) 발급 요청
       </button>
 
       {(status === 'approved' || status === 'completed') && (
