@@ -401,6 +401,8 @@ const App: React.FC = () => {
   const [approvalLeadTimeEvents, setApprovalLeadTimeEvents] = useState<ApprovalLeadTimeEventRecord[]>([]);
   const [executiveBuildingFilter, setExecutiveBuildingFilter] = useState<string>(() => parseExecutiveFiltersFromSearch(window.location.search).building);
   const [executiveMonthFilter, setExecutiveMonthFilter] = useState<string>(() => parseExecutiveFiltersFromSearch(window.location.search).month);
+  const [isExecutiveProgressHighlighted, setIsExecutiveProgressHighlighted] = useState(false);
+  const [executiveProgressFocusLabel, setExecutiveProgressFocusLabel] = useState<string>('공정률');
   
   const [currentTime, setCurrentTime] = useState<string>("");
   const [weather, setWeather] = useState<{temp: number, wind: number, condition: string} | null>(null);
@@ -1484,10 +1486,13 @@ const App: React.FC = () => {
     }
   };
 
-  const scrollToExecutiveProgressDetail = () => {
+  const scrollToExecutiveProgressDetail = (focusLabel: string = '공정률') => {
     const target = document.getElementById('executive-progress-detail');
     if (!target) return;
+    setExecutiveProgressFocusLabel(focusLabel);
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setIsExecutiveProgressHighlighted(true);
+    window.setTimeout(() => setIsExecutiveProgressHighlighted(false), 1000);
   };
 
   const shareCompletion = (data: StatusModalData) => {
@@ -1952,19 +1957,19 @@ const App: React.FC = () => {
                   <p className="text-[11px] text-slate-500 font-black uppercase tracking-widest">공구별 공정률 빠른 보기</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
-                      onClick={scrollToExecutiveProgressDetail}
+                      onClick={() => scrollToExecutiveProgressDetail('1공구')}
                       className="inline-flex items-center px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-black hover:bg-indigo-100"
                     >
                       1공구(휘강) {zoneProgress.zone1.rate}%
                     </button>
                     <button
-                      onClick={scrollToExecutiveProgressDetail}
+                      onClick={() => scrollToExecutiveProgressDetail('2공구')}
                       className="inline-flex items-center px-3 py-1.5 rounded-full border border-rose-200 bg-rose-50 text-rose-700 text-xs font-black hover:bg-rose-100"
                     >
                       2공구(오엔) {zoneProgress.zone2.rate}%
                     </button>
                     <button
-                      onClick={scrollToExecutiveProgressDetail}
+                      onClick={() => scrollToExecutiveProgressDetail('전체')}
                       className="inline-flex items-center px-3 py-1.5 rounded-full border border-slate-300 bg-slate-100 text-slate-700 text-xs font-black hover:bg-slate-200"
                     >
                       전체 {progressRate}%
@@ -2025,7 +2030,15 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div id="executive-progress-detail" className="bg-white rounded-lg border border-slate-300 p-4">
+                <div
+                  id="executive-progress-detail"
+                  className={`bg-white rounded-lg border p-4 transition-all ${isExecutiveProgressHighlighted ? 'border-brand-primary ring-2 ring-brand-primary/30 shadow-glow' : 'border-slate-300'}`}
+                >
+                  {isExecutiveProgressHighlighted && (
+                    <div className="mb-3 inline-flex items-center px-2.5 py-1 rounded-full bg-brand-primary/10 text-brand-primary text-[11px] font-black animate-fade-in-up">
+                      {executiveProgressFocusLabel} 상세 공정률 위치입니다
+                    </div>
+                  )}
                   <div className="mb-3">
                     <p className="text-sm font-black text-slate-800">실시간 골조 공정률</p>
                     <p className="text-xs text-slate-500 mt-1">공구별 활성 세대 기준 + 전체 통합</p>
