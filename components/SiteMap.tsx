@@ -3,12 +3,22 @@ import React from 'react';
 import { Building, ProcessStatus } from '../types';
 import { MapPin, Layers } from 'lucide-react';
 
+type GangformCellStatus = 'draft' | 'requested' | 'approved' | 'completed' | 'rejected';
+
+interface GangformStatusRecord {
+  status: GangformCellStatus;
+  payload?: {
+    floor?: string;
+  };
+}
+
 interface SiteMapProps {
   buildings: Building[];
+  gangformByBuilding?: Record<string, GangformStatusRecord>;
   onSelectBuilding: (buildingId: string) => void;
 }
 
-const SiteMap: React.FC<SiteMapProps> = ({ buildings, onSelectBuilding }) => {
+const SiteMap: React.FC<SiteMapProps> = ({ buildings, gangformByBuilding = {}, onSelectBuilding }) => {
   
   // [공구 구분 헬퍼 함수]
   const getZoneInfo = (buildingName: string) => {
@@ -63,6 +73,44 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, onSelectBuilding }) => {
     }
 
     return { floor: '마감', status: ProcessStatus.APPROVED };
+  };
+
+  const getFloorAlStatus = (building: Building, floorLevel: number): ProcessStatus => {
+    const floor = building.floors.find((f) => f.level === floorLevel);
+    if (!floor) return ProcessStatus.NOT_STARTED;
+
+    const activeUnits = floor.units.filter((unit) => !unit.isDeadUnit);
+    if (activeUnits.length === 0) return ProcessStatus.NOT_STARTED;
+
+    if (activeUnits.some((unit) => unit.status === ProcessStatus.POURING)) return ProcessStatus.POURING;
+    if (activeUnits.some((unit) => unit.status === ProcessStatus.APPROVAL_REQ)) return ProcessStatus.APPROVAL_REQ;
+    if (activeUnits.some((unit) => unit.status === ProcessStatus.INSTALLING)) return ProcessStatus.INSTALLING;
+    if (activeUnits.every((unit) => unit.status === ProcessStatus.CURED)) return ProcessStatus.CURED;
+    if (activeUnits.every((unit) => unit.status === ProcessStatus.APPROVED || unit.status === ProcessStatus.CURED)) return ProcessStatus.APPROVED;
+
+    return ProcessStatus.NOT_STARTED;
+  };
+
+  const parseGangformFloor = (floorText?: string): number | null => {
+    if (!floorText) return null;
+    const matched = floorText.match(/\d+/);
+    if (!matched) return null;
+    return Number(matched[0]);
+  };
+
+  const getGangformLabel = (status: GangformCellStatus | null): string => {
+    if (status === 'requested') return '승인 요청';
+    if (status === 'approved') return '허가 발급';
+    if (status === 'completed') return '인상 완료 (안전 확보)';
+    if (status === 'rejected') return '반려';
+    return '진행 전';
+  };
+
+  const getGangformBadgeClass = (status: GangformCellStatus | null): string => {
+    if (status === 'requested') return 'bg-orange-500 animate-pulse';
+    if (status === 'approved' || status === 'completed') return 'bg-emerald-500';
+    if (status === 'rejected') return 'bg-red-500';
+    return 'bg-slate-400/70';
   };
 
   const getStatusBorderColor = (status: ProcessStatus) => {
@@ -121,17 +169,45 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, onSelectBuilding }) => {
           {buildings.map((building) => {
             const info = getActiveInfo(building);
             const zone = getZoneInfo(building.name);
+            const activeFloor = parseInt(info.floor.replace(/[^0-9]/g, ''), 10);
+
+            const floorRows = building.floors.map((floor) => {
+              const gangformRecord = gangformByBuilding[building.id];
+              const gangformFloor = parseGangformFloor(gangformRecord?.payload?.floor);
+              const gangformStatus = gangformFloor === floor.level ? gangformRecord?.status ?? null : null;
+
+              return {
+                floorLevel: floor.level,
+                alStatus: getFloorAlStatus(building, floor.level),
+                gangformStatus
+              };
+            });
+
+            const displayFloorRow = floorRows.find((row) => row.floorLevel === activeFloor)
+              || floorRows.find((row) => row.alStatus !== ProcessStatus.NOT_STARTED)
+              || floorRows[floorRows.length - 1];
+
+            const tooltipText = `[${building.name} ${displayFloorRow?.floorLevel || '-'}층]\n▶ AL폼: ${displayFloorRow?.alStatus || ProcessStatus.NOT_STARTED}\n▶ 갱폼: ${getGangformLabel(displayFloorRow?.gangformStatus || null)}`;
+            const showGangformBadge = !!displayFloorRow?.gangformStatus;
             
             return (
               <button
                 key={building.id}
                 onClick={() => onSelectBuilding(building.id)}
+                title={tooltipText}
+                aria-label={tooltipText}
                 className={`group relative flex flex-col items-center justify-center py-4 px-1 rounded-xl border transition-all active:scale-[0.95] backdrop-blur-md overflow-hidden ${getStatusBorderColor(info.status)}`}
               >
                 {/* Zone Indicator Badge */}
                 <div className={`absolute top-0 left-0 px-1.5 py-[2px] rounded-br-lg text-[8px] font-black tracking-tighter z-10 ${zone.badgeColor} ${zone.textColor}`}>
                     {zone.label}
                 </div>
+
+                {showGangformBadge && (
+                  <div className={`absolute top-1.5 right-1.5 w-5 h-5 rounded-full text-[10px] font-black text-white flex items-center justify-center z-10 shadow-md ${getGangformBadgeClass(displayFloorRow.gangformStatus)}`}>
+                    G
+                  </div>
+                )}
 
                 <div className="text-[10px] font-black text-slate-300 mb-1 tracking-tighter shadow-sm whitespace-nowrap mt-1">
                   {building.name}

@@ -63,12 +63,28 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
   const zone = getZoneInfo(building.name);
 
   const getActiveFloorIndex = () => {
-      const idx = sortedFloors.findIndex(f => 
-          f.units.some(u => !u.isDeadUnit && u.status !== ProcessStatus.NOT_STARTED)
+      const ascFloors = [...building.floors].sort((a, b) => a.level - b.level);
+      const activeFloor = ascFloors.find((floor) =>
+        floor.units.some((unit) => !unit.isDeadUnit && unit.status !== ProcessStatus.CURED)
       );
-      if (idx !== -1) return idx;
-      return sortedFloors.length - 1; 
+
+      if (!activeFloor) return Math.max(0, sortedFloors.length - VIEW_SIZE);
+
+      const idx = sortedFloors.findIndex((floor) => floor.level === activeFloor.level);
+      return idx === -1 ? Math.max(0, sortedFloors.length - VIEW_SIZE) : idx;
   };
+
+  const getSliceRangeText = (offset: number) => {
+    const startFloor = sortedFloors[offset]?.level;
+    const endFloor = sortedFloors[Math.min(sortedFloors.length - 1, offset + VIEW_SIZE - 1)]?.level;
+
+    if (startFloor === undefined || endFloor === undefined) return '-';
+    return `${startFloor}층 ~ ${endFloor}층`;
+  };
+
+  const upRangeText = canScrollUp ? getSliceRangeText(Math.max(0, viewOffset - VIEW_SIZE)) : getSliceRangeText(viewOffset);
+  const downRangeText = canScrollDown ? getSliceRangeText(Math.min(sortedFloors.length - VIEW_SIZE, viewOffset + VIEW_SIZE)) : getSliceRangeText(viewOffset);
+  const currentRangeText = getSliceRangeText(viewOffset);
 
   useEffect(() => {
     if (!hasInitializedFocus.current && sortedFloors.length > 0) {
@@ -92,8 +108,19 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
   }, [jumpToFloor, onJumpHandled]);
 
   const handleScroll = (direction: 'up' | 'down') => {
-    if (direction === 'up' && canScrollUp) setViewOffset(Math.max(0, viewOffset - VIEW_SIZE));
-    else if (direction === 'down' && canScrollDown) setViewOffset(Math.min(sortedFloors.length - VIEW_SIZE, viewOffset + VIEW_SIZE));
+    const triggerHaptic = () => {
+      if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
+      navigator.vibrate(20);
+    };
+
+    if (direction === 'up' && canScrollUp) {
+      setViewOffset(Math.max(0, viewOffset - VIEW_SIZE));
+      triggerHaptic();
+    }
+    else if (direction === 'down' && canScrollDown) {
+      setViewOffset(Math.min(sortedFloors.length - VIEW_SIZE, viewOffset + VIEW_SIZE));
+      triggerHaptic();
+    }
   };
 
   const pendingRequests = building.floors.filter(f => f.units.some(u => u.status === ProcessStatus.APPROVAL_REQ));
@@ -182,14 +209,28 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
         <button 
           onClick={() => handleScroll('up')} 
           disabled={!canScrollUp} 
-          className={`p-1.5 rounded-full ${canScrollUp ? 'text-slate-600 hover:bg-slate-200' : 'text-slate-200'}`}
+          className={`w-full mx-3 py-3 rounded-lg border text-sm md:text-base font-black transition-colors ${
+            canScrollUp
+              ? 'bg-brand-primary text-white border-brand-primary hover:bg-blue-700'
+              : 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed'
+          }`}
         >
-          <ChevronUp className="w-5 h-5" />
+          ⬆️ 위층 보기 ({upRangeText})
         </button>
       </div>
 
+      <div className="px-3 py-2 border-b border-slate-200 bg-blue-50">
+        <p className="text-center text-sm md:text-base font-black text-blue-800">
+          현재 표시 구간: {currentRangeText}
+        </p>
+      </div>
+
       <div className="flex-1 relative bg-grid-pattern p-3 md:p-4 space-y-4 min-h-[350px] overflow-y-auto">
-        {visibleFloors.map((floor) => (
+        {visibleFloors.map((floor) => {
+          const activeUnits = floor.units.filter((unit) => !unit.isDeadUnit);
+          const isCompletedFloor = activeUnits.length > 0 && activeUnits.every((unit) => unit.status === ProcessStatus.CURED);
+
+          return (
           <div key={`${floor.level}-${building.id}`} className="flex items-stretch border-b border-slate-200/60 pb-4 last:border-0 last:pb-0">
             <div className="w-12 md:w-14 shrink-0 flex flex-col justify-center items-center mr-2 md:mr-3 border-r border-slate-200 relative pr-2 md:pr-3">
               <span className="font-mono text-lg md:text-xl font-black text-slate-500">{floor.level}F</span>
@@ -231,7 +272,7 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
                     className={`relative p-2 md:p-3 rounded-md border-l-[4px] text-left transition-all active:scale-95 shadow-sm flex flex-col justify-between h-20 md:h-24 overflow-hidden w-full max-w-full min-w-0 ${
                       unit.isDeadUnit 
                       ? 'bg-slate-100 border-slate-300 opacity-40 grayscale cursor-not-allowed' 
-                      : `bg-white ${STATUS_STYLES[unit.status] || 'border-slate-200'}`
+                      : `bg-white ${STATUS_STYLES[unit.status] || 'border-slate-200'} ${isCompletedFloor ? 'opacity-60 brightness-90' : ''}`
                     }`}
                   >
                     <div className="flex justify-between items-start w-full min-w-0 overflow-hidden">
@@ -272,16 +313,21 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
               ))}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="flex justify-center bg-slate-50 border-t border-slate-200 py-1.5 active:bg-slate-100 transition-colors">
         <button 
           onClick={() => handleScroll('down')} 
           disabled={!canScrollDown} 
-          className={`p-1.5 rounded-full ${canScrollDown ? 'text-slate-600 hover:bg-slate-200' : 'text-slate-200'}`}
+          className={`w-full mx-3 py-3 rounded-lg border text-sm md:text-base font-black transition-colors ${
+            canScrollDown
+              ? 'bg-brand-primary text-white border-brand-primary hover:bg-blue-700'
+              : 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed'
+          }`}
         >
-          <ChevronDown className="w-5 h-5" />
+          ⬇️ 아래층 보기 ({downRangeText})
         </button>
       </div>
     </div>

@@ -45,6 +45,7 @@ import LiveChat from './components/LiveChat';
 import GangformPTW, { GangformPTWPayload, ApprovalStatus } from './components/GangformPTW';
 import { suggestSitePlan } from './services/geminiService';
 import { insertGangformPtwCompletedRecord, fetchGangformPtwHistory, type GangformPtwRecordRow } from './services/gangformPtwActions';
+import { handleShareMessage, buildSmartSfcsShareText } from './lib/shareUtil';
 import { 
     syncBuildings, 
     saveBuilding, 
@@ -357,9 +358,16 @@ const getPathFromTab = (tab: 'dashboard' | 'executive' | 'analysis' | 'manual' |
 
 const parseExecutiveFiltersFromSearch = (search: string): { building: string; month: string } => {
   const params = new URLSearchParams(search);
-  const building = params.get('building') || 'ALL';
-  const month = params.get('month') || 'ALL';
+  const building = params.get('b') || params.get('building') || 'ALL';
+  const month = params.get('m') || params.get('month') || 'ALL';
   return { building, month };
+};
+
+const ZONE2_BUILDING_NUMBERS = new Set([2006, 2007, 2008, 2009, 2010, 3001, 3002, 3003]);
+
+const isZone2Building = (buildingName: string): boolean => {
+  const number = parseInt(buildingName.replace(/[^0-9]/g, ''), 10);
+  return ZONE2_BUILDING_NUMBERS.has(number);
 };
 
 interface GangformPtwLocalRecord {
@@ -425,8 +433,8 @@ const App: React.FC = () => {
     const nextPath = getPathFromTab(tab);
     const params = new URLSearchParams();
     if (tab === 'executive') {
-      if (executiveBuildingFilter !== 'ALL') params.set('building', executiveBuildingFilter);
-      if (executiveMonthFilter !== 'ALL') params.set('month', executiveMonthFilter);
+      if (executiveBuildingFilter !== 'ALL') params.set('b', executiveBuildingFilter);
+      if (executiveMonthFilter !== 'ALL') params.set('m', executiveMonthFilter);
     }
     const query = params.toString();
     const nextUrl = query ? `${nextPath}?${query}` : nextPath;
@@ -506,11 +514,13 @@ const App: React.FC = () => {
     if (activeTab !== 'executive') return;
 
     const params = new URLSearchParams(window.location.search);
-    if (executiveBuildingFilter === 'ALL') params.delete('building');
-    else params.set('building', executiveBuildingFilter);
+    params.delete('building');
+    if (executiveBuildingFilter === 'ALL') params.delete('b');
+    else params.set('b', executiveBuildingFilter);
 
-    if (executiveMonthFilter === 'ALL') params.delete('month');
-    else params.set('month', executiveMonthFilter);
+    params.delete('month');
+    if (executiveMonthFilter === 'ALL') params.delete('m');
+    else params.set('m', executiveMonthFilter);
 
     const query = params.toString();
     const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
@@ -1260,6 +1270,30 @@ const App: React.FC = () => {
   const totalUnits = allActiveUnits.length;
   const curedUnits = allActiveUnits.filter(u => u.status === ProcessStatus.CURED).length;
   const progressRate = totalUnits > 0 ? Math.round((curedUnits / totalUnits) * 100) : 0;
+  const zoneProgress = useMemo(() => {
+    const seed = {
+      zone1: { total: 0, cured: 0, rate: 0 },
+      zone2: { total: 0, cured: 0, rate: 0 }
+    };
+
+    const aggregated = buildings.reduce((acc, building) => {
+      const zoneKey = isZone2Building(building.name) ? 'zone2' : 'zone1';
+      const units = building.floors.flatMap(f => f.units).filter(u => !u.isDeadUnit);
+      const total = units.length;
+      const cured = units.filter(u => u.status === ProcessStatus.CURED).length;
+      acc[zoneKey].total += total;
+      acc[zoneKey].cured += cured;
+      return acc;
+    }, seed);
+
+    const zone1Rate = aggregated.zone1.total > 0 ? Math.round((aggregated.zone1.cured / aggregated.zone1.total) * 100) : 0;
+    const zone2Rate = aggregated.zone2.total > 0 ? Math.round((aggregated.zone2.cured / aggregated.zone2.total) * 100) : 0;
+
+    return {
+      zone1: { ...aggregated.zone1, rate: zone1Rate },
+      zone2: { ...aggregated.zone2, rate: zone2Rate }
+    };
+  }, [buildings]);
   const aiRiskCount = lastAnalysisResult?.riskFactors?.length || 0;
   const aiCriticalRiskCount = (lastAnalysisResult?.riskFactors || []).filter(r => Number(r.score || 0) >= 80).length;
   const ptwIssuedCount = Object.entries(gangformPtwByBuilding).filter(([buildingId, record]) => {
@@ -1405,6 +1439,18 @@ const App: React.FC = () => {
             <div class="v">${currentCycleAverageLeadMinutes} 분</div>
           </div>
 
+          <div class="card" style="margin-bottom:14px;">
+            <div class="k">실시간 골조 공정률 (공구별/전체)</div>
+            <table>
+              <thead><tr><th>구분</th><th>공정률</th><th>완료/활성 세대</th></tr></thead>
+              <tbody>
+                <tr><td>1공구 (휘강)</td><td>${zoneProgress.zone1.rate}%</td><td>${zoneProgress.zone1.cured} / ${zoneProgress.zone1.total}</td></tr>
+                <tr><td>2공구 (오엔)</td><td>${zoneProgress.zone2.rate}%</td><td>${zoneProgress.zone2.cured} / ${zoneProgress.zone2.total}</td></tr>
+                <tr><td>전체</td><td>${progressRate}%</td><td>${curedUnits} / ${totalUnits}</td></tr>
+              </tbody>
+            </table>
+          </div>
+
           <div class="card">
             <div class="k">승인 리드타임 단축 추이</div>
             <table>
@@ -1438,25 +1484,26 @@ const App: React.FC = () => {
     }
   };
 
+  const scrollToExecutiveProgressDetail = () => {
+    const target = document.getElementById('executive-progress-detail');
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const shareCompletion = (data: StatusModalData) => {
-    let title = "";
-    let message = "";
+    const title = data.nextStatus === ProcessStatus.APPROVAL_REQ
+      ? 'SMART-SFCS 승인 요청'
+      : 'SMART-SFCS 승인 완료';
 
-    if (data.nextStatus === ProcessStatus.APPROVAL_REQ) {
-        title = "SFCS 설치완료 보고";
-        // [User Request] 요청하신 'AL폼 조립 및 슬라브 완성...' 문구 반영
-        message = `[설치완료 보고]\n현장: ${data.buildingName}\n위치: ${data.floorLevel}층 ${data.unitNumber}호\n상태: AL폼 조립 및 슬라브 완성, 서포트 설치 완료. 검측 요청합니다.`;
-    } else if (data.nextStatus === ProcessStatus.APPROVED) {
-      title = "SFCS 안전 작업 허가(PTW) 발급";
-      message = `[안전 작업 허가(PTW) 발급]\n현장: ${data.buildingName}\n위치: ${data.floorLevel}층 ${data.unitNumber}호\n결과: 검측 합격. 후속 공정 진행 바랍니다.`;
-    }
+    const status = data.nextStatus === ProcessStatus.APPROVAL_REQ ? '승인 요청' : '승인 완료';
+    const text = buildSmartSfcsShareText({
+      workType: 'AL폼 검측',
+      building: data.buildingName,
+      floor: `${data.floorLevel}층`,
+      status
+    });
 
-    if (navigator.share) {
-      navigator.share({ title: title, text: message }).catch(console.error);
-    } else {
-      navigator.clipboard.writeText(message);
-      addNotification("메시지가 클립보드에 복사되었습니다. 카카오톡을 열어 붙여넣기 하세요.", "success");
-    }
+    handleShareMessage(title, text);
   };
 
   return (
@@ -1753,7 +1800,7 @@ const App: React.FC = () => {
                   </div>
                 )}
                 
-                <SiteMap buildings={buildings} onSelectBuilding={(id) => {
+                <SiteMap buildings={buildings} gangformByBuilding={gangformPtwByBuilding} onSelectBuilding={(id) => {
                     const el = document.getElementById(`building-${id}`);
                     if(el) window.scrollTo({ top: el.offsetTop - 140, behavior: 'smooth' });
 
@@ -1902,6 +1949,30 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="bg-white rounded-lg border border-slate-300 p-4">
+                  <p className="text-[11px] text-slate-500 font-black uppercase tracking-widest">공구별 공정률 빠른 보기</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={scrollToExecutiveProgressDetail}
+                      className="inline-flex items-center px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-black hover:bg-indigo-100"
+                    >
+                      1공구(휘강) {zoneProgress.zone1.rate}%
+                    </button>
+                    <button
+                      onClick={scrollToExecutiveProgressDetail}
+                      className="inline-flex items-center px-3 py-1.5 rounded-full border border-rose-200 bg-rose-50 text-rose-700 text-xs font-black hover:bg-rose-100"
+                    >
+                      2공구(오엔) {zoneProgress.zone2.rate}%
+                    </button>
+                    <button
+                      onClick={scrollToExecutiveProgressDetail}
+                      className="inline-flex items-center px-3 py-1.5 rounded-full border border-slate-300 bg-slate-100 text-slate-700 text-xs font-black hover:bg-slate-200"
+                    >
+                      전체 {progressRate}%
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg border border-slate-300 p-4">
                   <p className="text-[11px] text-slate-500 font-black uppercase tracking-widest">현재 사이클 평균 승인 리드타임 (실측)</p>
                   <p className="font-mono text-3xl font-black mt-2 tracking-tight text-brand-primary">{currentCycleAverageLeadMinutes}<span className="text-base text-slate-400 ml-1">분</span></p>
                 </div>
@@ -1954,12 +2025,28 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-lg border border-slate-300 p-4 flex items-center justify-between">
-                  <div>
+                <div id="executive-progress-detail" className="bg-white rounded-lg border border-slate-300 p-4">
+                  <div className="mb-3">
                     <p className="text-sm font-black text-slate-800">실시간 골조 공정률</p>
-                    <p className="text-xs text-slate-500 mt-1">전체 활성 세대 기준</p>
+                    <p className="text-xs text-slate-500 mt-1">공구별 활성 세대 기준 + 전체 통합</p>
                   </div>
-                  <p className="font-mono text-4xl font-black tracking-tight text-brand-primary">{progressRate}%</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-3">
+                      <p className="text-[11px] font-black text-indigo-700">1공구 (휘강)</p>
+                      <p className="font-mono text-3xl font-black tracking-tight text-indigo-700 mt-1">{zoneProgress.zone1.rate}%</p>
+                      <p className="text-[11px] text-indigo-600 mt-1">{zoneProgress.zone1.cured} / {zoneProgress.zone1.total} 세대</p>
+                    </div>
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-3">
+                      <p className="text-[11px] font-black text-rose-700">2공구 (오엔)</p>
+                      <p className="font-mono text-3xl font-black tracking-tight text-rose-700 mt-1">{zoneProgress.zone2.rate}%</p>
+                      <p className="text-[11px] text-rose-600 mt-1">{zoneProgress.zone2.cured} / {zoneProgress.zone2.total} 세대</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-3">
+                      <p className="text-[11px] font-black text-slate-700">전체</p>
+                      <p className="font-mono text-3xl font-black tracking-tight text-brand-primary mt-1">{progressRate}%</p>
+                      <p className="text-[11px] text-slate-600 mt-1">{curedUnits} / {totalUnits} 세대</p>
+                    </div>
+                  </div>
                 </div>
               </section>
             )}

@@ -6,6 +6,7 @@ import GangformPTWWorker, {
   type ApprovalStatus,
   type GangformPTWPayload
 } from './GangformPTWWorker';
+import { handleShareMessage, buildSmartSfcsShareText } from '../lib/shareUtil';
 
 type Role = 'worker' | 'admin';
 
@@ -67,6 +68,17 @@ const GangformPTWAdmin: React.FC<GangformPTWAdminProps> = ({
     }
   };
 
+  const shareAdminMessage = (shareStatus: '승인 요청' | '승인 완료') => {
+    const title = shareStatus === '승인 요청' ? 'SMART-SFCS 갱폼 승인 요청' : 'SMART-SFCS 갱폼 승인 완료';
+    const text = buildSmartSfcsShareText({
+      workType: '갱폼 인상',
+      building: payload.building || buildingId,
+      floor: payload.floor || '-',
+      status: shareStatus
+    });
+    handleShareMessage(title, text);
+  };
+
   return (
     <section className="bg-white rounded-3xl border border-slate-200 p-6 space-y-5">
       <header className="flex items-center justify-between">
@@ -119,6 +131,12 @@ const GangformPTWAdmin: React.FC<GangformPTWAdminProps> = ({
 
       <div className="flex gap-2">
         <button
+          onClick={() => shareAdminMessage('승인 요청')}
+          className="px-4 py-2 rounded-xl bg-slate-800 text-white text-sm font-black"
+        >
+          🚀 알림 공유하기
+        </button>
+        <button
           onClick={handleApprove}
           disabled={status !== 'requested' || isSubmitting}
           className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-black disabled:opacity-50"
@@ -133,6 +151,15 @@ const GangformPTWAdmin: React.FC<GangformPTWAdminProps> = ({
           반려
         </button>
       </div>
+
+      {status === 'approved' && (
+        <button
+          onClick={() => shareAdminMessage('승인 완료')}
+          className="px-4 py-2 rounded-xl bg-slate-800 text-white text-sm font-black"
+        >
+          🚀 알림 공유하기
+        </button>
+      )}
     </section>
   );
 };

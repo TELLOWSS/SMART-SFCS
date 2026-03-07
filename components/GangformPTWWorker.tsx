@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { uploadGangformPhoto, type GangformPhotoSlotKey } from '../lib/imageUploadUtil';
+import { handleShareMessage, buildSmartSfcsShareText } from '../lib/shareUtil';
 
 export type ApprovalStatus = 'draft' | 'requested' | 'approved' | 'completed' | 'rejected';
 
@@ -388,6 +389,17 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     }
   };
 
+  const shareGangformMessage = (status: '승인 요청' | '승인 완료') => {
+    const title = status === '승인 요청' ? 'SMART-SFCS 갱폼 승인 요청' : 'SMART-SFCS 갱폼 승인 완료';
+    const text = buildSmartSfcsShareText({
+      workType: '갱폼 인상',
+      building: payload.building || buildingId,
+      floor: payload.floor || '-',
+      status
+    });
+    handleShareMessage(title, text);
+  };
+
   return (
     <section className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6">
       <header className="flex items-center justify-between">
@@ -538,6 +550,15 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
         안전 작업 허가(PTW) 발급 요청
       </button>
 
+      {status === 'requested' && (
+        <button
+          onClick={() => shareGangformMessage('승인 요청')}
+          className="w-full py-3 rounded-xl bg-slate-800 text-white font-black text-sm"
+        >
+          🚀 알림 공유하기
+        </button>
+      )}
+
       {(status === 'approved' || status === 'completed') && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
           <h3 className="text-sm font-black text-emerald-700">작업 중 사진 업로드</h3>
@@ -565,13 +586,21 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
           </div>
 
           {status === 'approved' && (
-            <button
-              onClick={markAsCompleted}
-              disabled={!payload.requiredPhotos.duringWork.작업중_안전블럭체결 || isSubmitting}
-              className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-black disabled:opacity-40"
-            >
-              작업 완료 처리
-            </button>
+            <>
+              <button
+                onClick={() => shareGangformMessage('승인 완료')}
+                className="w-full py-2.5 rounded-xl bg-slate-800 text-white text-sm font-black"
+              >
+                🚀 알림 공유하기
+              </button>
+              <button
+                onClick={markAsCompleted}
+                disabled={!payload.requiredPhotos.duringWork.작업중_안전블럭체결 || isSubmitting}
+                className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-black disabled:opacity-40"
+              >
+                작업 완료 처리
+              </button>
+            </>
           )}
         </div>
       )}
