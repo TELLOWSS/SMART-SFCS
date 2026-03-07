@@ -996,6 +996,80 @@ const App: React.FC = () => {
     setStatusModal(null);
   };
 
+  const handleBulkFloorStatusUpdate = async (bId: string, floorLevel: number, targetStatus: ProcessStatus) => {
+    if (
+      targetStatus !== ProcessStatus.APPROVED &&
+      targetStatus !== ProcessStatus.POURING &&
+      targetStatus !== ProcessStatus.CURED
+    ) return;
+
+    const targetBuilding = buildings.find(b => b.id === bId);
+    if (!targetBuilding) return;
+
+    const targetFloor = targetBuilding.floors.find(f => f.level === floorLevel);
+    if (!targetFloor) return;
+
+    const activeUnits = targetFloor.units.filter(u => !u.isDeadUnit);
+    if (activeUnits.length === 0) return;
+
+    const statusLabel =
+      targetStatus === ProcessStatus.APPROVED
+        ? '승인완료'
+        : targetStatus === ProcessStatus.POURING
+        ? '타설중'
+        : '양생완료';
+    const confirmed = window.confirm(`${targetBuilding.name} ${floorLevel}층 전체를 '${statusLabel}' 상태로 일괄 변경하시겠습니까?`);
+    if (!confirmed) return;
+
+    const now = new Date().toISOString();
+
+    const newBuildings = buildings.map(b => {
+      if (b.id !== bId) return b;
+      return {
+        ...b,
+        floors: b.floors.map(f => {
+          if (f.level !== floorLevel) return f;
+          return {
+            ...f,
+            units: f.units.map(u => {
+              if (u.isDeadUnit) return u;
+
+              let nextMep = u.mepCompleted;
+              if (targetStatus === ProcessStatus.APPROVED) {
+                nextMep = false;
+              }
+              if (targetStatus === ProcessStatus.POURING) {
+                nextMep = true;
+              }
+
+              return {
+                ...u,
+                status: targetStatus,
+                mepCompleted: nextMep,
+                lastUpdated: now
+              };
+            })
+          };
+        })
+      };
+    });
+
+    setBuildings(newBuildings);
+    const updatedBuilding = newBuildings.find(b => b.id === bId);
+    if (updatedBuilding) {
+      saveBuilding(updatedBuilding);
+    }
+
+    addNotification(`[일괄 처리] ${targetBuilding.name} ${floorLevel}층 전체 ${statusLabel} 전환 완료`, 'success');
+
+    await sendChatMessage({
+      text: `📦 [층 단위 일괄처리] ${targetBuilding.name} ${floorLevel}층 전체 ${statusLabel}로 전환되었습니다.`,
+      userRole: currentUserRole,
+      timestamp: Date.now(),
+      senderName: '관리자 알림'
+    });
+  };
+
   const addNotification = (msg: string, type: SystemNotification['type']) => {
     setNotifications(prev => [{ id: Date.now().toString(), message: msg, type, timestamp: '방금 전', read: false }, ...prev]);
   };
@@ -1442,6 +1516,9 @@ const App: React.FC = () => {
                                 nextStatus,
                                 isRevert
                               });
+                            }}
+                            onBulkUpdateFloorStatus={(floorLevel, targetStatus) => {
+                              handleBulkFloorStatusUpdate(b.id, floorLevel, targetStatus);
                             }}
                             onUpdateMep={(floorLevel, unitId, completed) => {
                                 handleMepUpdate(b.id, floorLevel, unitId, completed);

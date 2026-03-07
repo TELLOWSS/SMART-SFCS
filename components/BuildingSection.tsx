@@ -7,6 +7,7 @@ interface BuildingSectionProps {
   building: Building;
   userRole: UserRole;
   onUpdateStatus: (floorLevel: number, unitId: string, unitNumber: string, currentStatus: ProcessStatus, nextStatus: ProcessStatus, isRevert: boolean) => void;
+  onBulkUpdateFloorStatus: (floorLevel: number, targetStatus: ProcessStatus) => void;
   onUpdateMep: (floorLevel: number, unitId: string, completed: boolean) => void;
   jumpToFloor?: number;
   onJumpHandled?: () => void;
@@ -21,7 +22,7 @@ const STATUS_STYLES = {
   [ProcessStatus.CURED]: 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-inner',
 };
 
-const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, onUpdateStatus, onUpdateMep, jumpToFloor, onJumpHandled }) => {
+const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, onUpdateStatus, onBulkUpdateFloorStatus, onUpdateMep, jumpToFloor, onJumpHandled }) => {
   const [viewOffset, setViewOffset] = useState(0);
   const VIEW_SIZE = 3; 
   const hasInitializedFocus = useRef(false);
@@ -192,6 +193,31 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
           <div key={`${floor.level}-${building.id}`} className="flex items-stretch border-b border-slate-200/60 pb-4 last:border-0 last:pb-0">
             <div className="w-12 md:w-14 shrink-0 flex flex-col justify-center items-center mr-2 md:mr-3 border-r border-slate-200 relative pr-2 md:pr-3">
               <span className="font-mono text-lg md:text-xl font-black text-slate-500">{floor.level}F</span>
+              {(userRole === UserRole.ADMIN || userRole === UserRole.CREATOR) && (
+                <div className="mt-2 flex flex-col gap-1 w-full">
+                  <button
+                    onClick={() => onBulkUpdateFloorStatus(floor.level, ProcessStatus.APPROVED)}
+                    className="text-[9px] font-black px-1 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                    title={`${floor.level}층 전체를 승인완료로 전환`}
+                  >
+                    전체 승인
+                  </button>
+                  <button
+                    onClick={() => onBulkUpdateFloorStatus(floor.level, ProcessStatus.POURING)}
+                    className="text-[9px] font-black px-1 py-0.5 rounded border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors"
+                    title={`${floor.level}층 전체를 타설중으로 전환`}
+                  >
+                    전체 타설
+                  </button>
+                  <button
+                    onClick={() => onBulkUpdateFloorStatus(floor.level, ProcessStatus.CURED)}
+                    className="text-[9px] font-black px-1 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                    title={`${floor.level}층 전체를 양생완료로 전환`}
+                  >
+                    전체 양생
+                  </button>
+                </div>
+              )}
               {floor.units.some(u => u.status === ProcessStatus.APPROVAL_REQ) && (
                   <div className="absolute right-[-4px] top-1/2 -translate-y-1/2 w-2 h-2 bg-brand-accent rounded-full animate-ping"></div>
               )}
