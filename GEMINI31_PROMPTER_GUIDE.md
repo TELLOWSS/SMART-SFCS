@@ -187,3 +187,217 @@ E. "실패 시나리오 및 보정 룰" 3개
 권장 규칙:
 - 동일 분석 키(현장명+프로젝트코드+액션 해시)에서는 중복 전송하지 않습니다.
 - 채팅 전송 순서는 관리자 → 작업자 → 협력사 → 통합 브리핑 순으로 고정합니다.
+
+---
+
+## 9) 2026-03-07 업그레이드/디자인 통합 점검 (최신)
+아래 블록은 "현재까지 업그레이드 상태 + 디자인 전체 반영사항"을 기준으로 Gemini 점검을 실행할 때 사용합니다.
+
+### 9-1. 기능 업그레이드 핵심 6축
+1. 권한 운영
+- CREATOR/ADMIN/WORKER/SUBCONTRACTOR 역할 분리
+- 제작자 전용 재분석/초기화, 관리자 승인·반려, 작업자 승인요청/PTW 수행
+
+2. 공정 상태/승인 흐름
+- 미착수 → 설치중 → 승인요청 → 승인완료 → 타설중 → 양생완료
+- 긴급 승인 대기 목록, 동/층 점프, 승인 반려 처리
+
+3. AI 분석 파이프라인
+- 이미지/PDF/엑셀 업로드 + 전처리(압축/형식 정규화)
+- 동별 구조/층수/호수 추출 + Dead Unit 규칙 추론
+- riskFactors/actionItems 정규화 및 코드 매핑
+
+4. 소통/알림
+- 실시간 채팅(역할별 UI 분기), 관리자/제작자 채팅 초기화
+- 고우선 액션 발생 시 역할별 커뮤니케이션 번들 전파
+
+5. PTW(갱폼 작업허가)
+- 작업자/관리자 화면 분리, 상태(draft/requested/approved/completed/rejected)
+- 증빙 5장(작업 전 4 + 작업 중 1), 완료 기록 히스토리 조회
+
+6. 운영 안정성
+- JSON 백업/복구, 제작자 배치 제어(초기화/재동기화)
+- 실시간 연결 상태 표시 및 지속성(persistence)
+
+### 9-2. 디자인 전체 반영 기준
+- 컨셉: Digital Concrete (견고함 + 데이터 투명성)
+- 토큰: brand.dark/primary/accent/bg + 상태색 체계(ready/active/warning/success/danger)
+- 레이아웃: 다크 사이드바 + 라이트 콘텐츠, 대형 라운드 카드, 그리드 패턴, 블러
+- 모션: fadeInUp / slideUp / scaleIn
+- 공정 상태색 일관성:
+  - 미착수(슬레이트), 설치중(옐로우), 승인요청(오렌지), 승인완료(블루), 타설중(퍼플), 양생완료(에메랄드)
+
+### 9-3. Gemini 점검 지시문 (간단형)
+```text
+너는 건설 디지털 관제 시스템 품질 감사자다.
+아래 6축(권한/공정/AI/소통/PTW/운영안정)과 디자인 기준(토큰/상태색/레이아웃/모션)을 점검해,
+누락/충돌/우선순위를 표로 정리하라.
+
+반드시 출력:
+1) 요약 5줄
+2) 리스크 표(상/중/하, 원인, 영향, 개선안)
+3) 2주 실행 로드맵(즉시/1주/2주)
+4) KPI JSON
+```
+
+### 9-4. 상세 문서
+- 전체 상세본은 `GEMINI_UPDATE_STATUS_2026-03-07.md`를 기준으로 사용합니다.
+
+---
+
+## 10) 마스터 통합본 (업그레이드 상세 + 디자인 전체)
+기준일: 2026-03-07
+
+### 10-1. 프로젝트 상태 요약
+- 제품명: SMART-SFCS (스마트 골조 통합 관제)
+- 프론트엔드: React 19 + TypeScript + Vite
+- 시각화/아이콘: Recharts, Lucide
+- AI: Google `@google/genai` (`gemini-3-flash-preview`)
+- 실시간 데이터: Firebase Firestore + 익명 인증 + IndexedDB persistence
+- PTW 아카이브: Supabase (`gangform_ptw_records`)
+
+### 10-2. 업그레이드 완료 상세
+#### A) 역할 기반 운영 고도화
+- 역할 체계: 제작자(CREATOR), 관리자(ADMIN), 작업자(WORKER), 협력사(SUBCONTRACTOR)
+- 권한 분리:
+  - 제작자: AI 업로드/재분석, DB 초기화/재동기화, 시스템 제어
+  - 관리자: 승인/반려, 백업/복구, 채팅 관리
+  - 작업자: 상태 진행/승인요청, PTW 작성/증빙 업로드
+  - 협력사: 운영 소통 대상(역할별 전파 메시지)
+- 관리자/제작자 로그인 모달(코드 분기) 기반 권한 전환
+
+#### B) 대시보드/공정 상태 플로우
+- 상태 체계: `미착수 → 설치중 → 승인요청 → 승인완료 → 타설중 → 양생완료`
+- 작업자/관리자 상태 전이 분리
+- 승인요청 긴급 카드, 즉시 승인 액션, 동/층 점프 지원
+- 승인 반려 기능 추가(관리자/제작자)
+- SiteMap + 동별 카드 실시간 진행층 표시
+- Dead Unit 제외 계산 적용
+
+#### C) AI 도면/데이터 분석 엔진
+- 입력: 이미지/PDF/엑셀(CSV 포함) 멀티 업로드
+- 전처리: 이미지 압축, MIME 정규화, 진행률 표시
+- 핵심 분석: 동별 독립 구조, 층/호수 추출, Dead Unit 규칙 추론
+- 출력 표준: `buildingStructures`, `riskFactors`, `actionItems`
+- 후처리: 리스크 코드/심각도 매핑, 액션 코드/우선순위 정규화
+- 결과 저장/구독: Firestore 영속화 + 실시간 구독
+- 권한 제어: 제작자만 재분석, 타 역할 조회 전용
+
+#### D) 소통/알림 체계
+- Live Chat 실시간 채팅(역할별 뱃지/버블 분기)
+- 관리자/제작자 채팅 전체 삭제 기능
+- 시스템 토스트 + 브라우저 알림 + 사운드
+- 고우선 액션 발생 시 역할별 커뮤니케이션 번들 전송
+- 카카오톡/문자 공유를 위한 메시지 공유/클립보드 흐름
+
+#### E) PTW 모듈
+- PTW 탭/페이지/히스토리 분리
+- Worker:
+  - 필수 체크(압축강도, TBM/PPE, 하부통제, 낙하물 제거)
+  - 작업 전 4장 + 작업 중 1장 증빙 구조
+  - 승인요청/완료, 연습모드, 되돌리기, 로컬 임시저장
+- Admin:
+  - 제출 검토 + 승인/반려
+- 상태: `draft → requested → approved → completed / rejected`
+- 저장: Firestore `site_data/gangform_ptw`
+- 아카이브: Supabase insert + 히스토리 조회
+
+#### F) 운영 안정성
+- 전체 상태 JSON 백업/복구
+- 제작자 배치 동작(초기화/재동기화)
+- 연결 상태(online/offline) 및 persistence 반영
+
+### 10-3. 디자인 전체 반영 상세
+#### A) 디자인 토큰
+- 폰트:
+  - 기본: Pretendard + Inter
+  - 모노: JetBrains Mono
+- 브랜드 컬러:
+  - `brand.dark`: `#002E6C`
+  - `brand.primary`: `#0055A5`
+  - `brand.accent`: `#F97316`
+  - `brand.bg`: `#F1F5F9`
+  - `brand.surface`: `#FFFFFF`
+- 상태 컬러: ready/active/warning/success/danger
+- 그림자: `shadow-tech`, `shadow-glow`, `shadow-card`
+
+#### B) 레이아웃/비주얼
+- 컨셉: Digital Concrete
+- 스타일: 대형 라운드 카드, 블러, 그리드 패턴, 소프트 섀도우
+- 구조: 다크 사이드바 + 라이트 콘텐츠 캔버스
+- 모션: `fadeInUp`, `slideUp`, `scaleIn`
+
+#### C) 공정 상태 색상 일관성
+- 미착수: 슬레이트
+- 설치중: 옐로우
+- 승인요청: 오렌지
+- 승인완료: 블루
+- 타설중: 퍼플
+- 양생완료: 에메랄드
+- Dead Unit: 저채도/비활성 + Ghost 아이콘
+
+#### D) 화면별 디자인 특징
+- 사이드바: 역할별 메뉴 + Data Safety/Creator Controls + 브랜드 패널
+- 헤더: 연결상태 뱃지 + 시계/기상 + 현장명 입력 강조
+- 대시보드: 긴급 승인 카드 + 동별 그리드 + 검색/점프
+- SiteMap: 1공구/2공구 배지 + 상태색 진행층
+- Analysis: 카드형 2컬럼, 제작자 편집/타역할 조회 분리
+- PTW: 5장 증빙 중심 법적 증빙 UX
+- Manual: 사용자 가이드 + 기술 아키텍처 2탭
+
+### 10-4. Gemini 점검 프롬프트 (상세형, 복붙)
+```text
+너는 건설 현장 디지털 관제 시스템의 제품 점검/정보구조(IA)/UX 감사 전문가다.
+아래 "SMART-SFCS 업그레이드 현황"을 기준으로, 실제 운영 관점에서 업데이트 누락/충돌/개선 우선순위를 점검해줘.
+
+[입력 데이터]
+- 기준일: 2026-03-07
+- 기능 요약:
+  1) 역할 기반 운영(CREATOR/ADMIN/WORKER/SUBCONTRACTOR)
+  2) 공정 상태 흐름(미착수~양생완료) + 승인 반려
+  3) AI 분석(도면/엑셀, dead unit, 리스크/액션 정규화)
+  4) 실시간 채팅/알림/역할별 소통 번들
+  5) PTW 모듈(작업자/관리자/히스토리, 5장 증빙, Supabase 기록)
+  6) 백업/복구/초기화 등 운영 안전 기능
+- 디자인 시스템 요약:
+  - Digital Concrete 컨셉
+  - 브랜드 토큰(brand.dark/primary/accent/bg)
+  - 상태 색상 규칙, 카드형 라운드 UI, 유리질감, 그리드 패턴, 모션(fade/slide/scale)
+
+[요청사항]
+A. 현재 업그레이드 상태 진단 (잘 된 점 5개)
+B. 기능 리스크/충돌 가능성 (상/중/하, 원인, 영향, 완화안)
+C. 디자인 일관성 점검 (컴포넌트별 이탈 지점)
+D. 다음 2주 실행 로드맵 (즉시/1주/2주)
+E. 운영 KPI 제안 (현장 반응속도, 승인 리드타임, PTW 완결률, 오탐률 등)
+F. 반드시 한국어로, 표 + JSON 예시 함께 출력
+
+출력 형식:
+1) 요약(5줄)
+2) 점검표(카테고리, 현재수준, 문제, 개선안, 우선순위)
+3) 실행 로드맵(즉시/1주/2주)
+4) KPI JSON
+```
+
+### 10-5. Gemini 응답 확인 체크리스트
+- 6개 축(권한/공정/AI/소통/PTW/운영안정)을 모두 다뤘는가
+- 디자인 점검이 토큰/상태색/레이아웃/모션으로 분리 평가됐는가
+- 개선안이 즉시 실행 가능한 수준(담당/범위/기한)인가
+- KPI가 현장 데이터로 추적 가능한가
+- 추상적 문장만 있고 실행 액션이 빠진 항목이 없는가
+
+### 10-6. 근거 파일
+- `App.tsx`
+- `components/AnalysisView.tsx`
+- `components/BuildingSection.tsx`
+- `components/SiteMap.tsx`
+- `components/LiveChat.tsx`
+- `components/Manual.tsx`
+- `components/GangformPTW.tsx`
+- `components/GangformPTWWorker.tsx`
+- `components/GangformPTWHistory.tsx`
+- `services/geminiService.ts`
+- `services/firebaseService.ts`
+- `services/gangformPtwActions.ts`
+- `types.ts`
+- `index.html`
