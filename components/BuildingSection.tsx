@@ -26,6 +26,7 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
   const [viewOffset, setViewOffset] = useState(0);
   const VIEW_SIZE = 3; 
   const hasInitializedFocus = useRef(false);
+  const lastAutoFocusedFloorRef = useRef<number | null>(null);
 
   // 실시간 반영을 위해 렌더링 시마다 즉시 정렬 (메모이제이션 제거)
   const sortedFloors = [...building.floors].sort((a, b) => b.level - a.level);
@@ -74,6 +75,15 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
       return idx === -1 ? Math.max(0, sortedFloors.length - VIEW_SIZE) : idx;
   };
 
+  const getActiveFloorLevel = () => {
+    const ascFloors = [...building.floors].sort((a, b) => a.level - b.level);
+    const activeFloor = ascFloors.find((floor) =>
+      floor.units.some((unit) => !unit.isDeadUnit && unit.status !== ProcessStatus.CURED)
+    );
+
+    return activeFloor?.level ?? null;
+  };
+
   const getSliceRangeText = (offset: number) => {
     const startFloor = sortedFloors[offset]?.level;
     const endFloor = sortedFloors[Math.min(sortedFloors.length - 1, offset + VIEW_SIZE - 1)]?.level;
@@ -86,15 +96,25 @@ const BuildingSection: React.FC<BuildingSectionProps> = ({ building, userRole, o
   const downRangeText = canScrollDown ? getSliceRangeText(Math.min(sortedFloors.length - VIEW_SIZE, viewOffset + VIEW_SIZE)) : getSliceRangeText(viewOffset);
   const currentRangeText = getSliceRangeText(viewOffset);
 
+  const activeFloorLevel = getActiveFloorLevel();
+
   useEffect(() => {
-    if (!hasInitializedFocus.current && sortedFloors.length > 0) {
-         const activeIndex = getActiveFloorIndex();
-         let targetOffset = activeIndex - Math.floor(VIEW_SIZE / 2);
-         targetOffset = Math.max(0, Math.min(sortedFloors.length - VIEW_SIZE, targetOffset));
-         setViewOffset(targetOffset);
-         hasInitializedFocus.current = true;
-    }
-  }, [building.id]);
+    if (sortedFloors.length === 0 || activeFloorLevel === null) return;
+
+    const shouldAutoFocus =
+      !hasInitializedFocus.current ||
+      lastAutoFocusedFloorRef.current !== activeFloorLevel;
+
+    if (!shouldAutoFocus) return;
+
+    const activeIndex = getActiveFloorIndex();
+    let targetOffset = activeIndex - Math.floor(VIEW_SIZE / 2);
+    targetOffset = Math.max(0, Math.min(sortedFloors.length - VIEW_SIZE, targetOffset));
+
+    setViewOffset(targetOffset);
+    hasInitializedFocus.current = true;
+    lastAutoFocusedFloorRef.current = activeFloorLevel;
+  }, [building.id, activeFloorLevel, sortedFloors.length]);
 
   useEffect(() => {
     if (jumpToFloor !== undefined) {
