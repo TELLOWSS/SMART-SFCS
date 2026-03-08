@@ -1511,6 +1511,8 @@ const App: React.FC = () => {
     handleShareMessage(title, text);
   };
 
+  const isExecutiveReadOnly = currentUserRole === UserRole.WORKER;
+
   return (
     <div className="min-h-screen flex bg-slate-50 font-sans text-slate-900 overflow-x-hidden">
       {isMobileMenuOpen && <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[65] md:hidden" onClick={() => setIsMobileMenuOpen(false)} />}
@@ -1892,6 +1894,11 @@ const App: React.FC = () => {
                     <h2 className="text-2xl font-black tracking-tight text-gray-900">Executive Summary (경영진 브리핑)</h2>
                     <p className="text-sm text-slate-600 mt-1">현장 안전·생산성·행정효율 통합 지표</p>
                     <div className="mt-2 flex flex-wrap gap-2">
+                      {isExecutiveReadOnly && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md border border-amber-300 bg-amber-50 text-[10px] font-black text-amber-700 uppercase tracking-wider">
+                          작업자 모드 · 조회 전용
+                        </span>
+                      )}
                       <span className="inline-flex items-center px-2.5 py-1 rounded-md border border-slate-300 bg-slate-100 text-[10px] font-black text-slate-700 uppercase tracking-wider">
                         Scope · {executiveBuildingFilter === 'ALL' ? '전체 동' : executiveBuildingFilter}
                       </span>
@@ -1921,13 +1928,15 @@ const App: React.FC = () => {
                     </select>
                     <button
                       onClick={copyCurrentExecutiveViewLink}
-                      className="inline-flex items-center px-4 py-2 rounded-lg text-xs font-black border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                      disabled={isExecutiveReadOnly}
+                      className={`inline-flex items-center px-4 py-2 rounded-lg text-xs font-black border border-slate-300 ${isExecutiveReadOnly ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
                     >
                       <Share2 className="w-4 h-4 mr-2" /> 현재 뷰 링크 복사
                     </button>
                     <button
                       onClick={exportExecutiveReportPdf}
-                      className="inline-flex items-center px-4 py-2 rounded-lg text-xs font-black border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                      disabled={isExecutiveReadOnly}
+                      className={`inline-flex items-center px-4 py-2 rounded-lg text-xs font-black border border-slate-300 ${isExecutiveReadOnly ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
                     >
                       <Download className="w-4 h-4 mr-2" /> One-Click 자동화 리포트 출력 (Export to PDF)
                     </button>
@@ -1958,19 +1967,22 @@ const App: React.FC = () => {
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       onClick={() => scrollToExecutiveProgressDetail('1공구')}
-                      className="inline-flex items-center px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-black hover:bg-indigo-100"
+                      disabled={isExecutiveReadOnly}
+                      className={`inline-flex items-center px-3 py-1.5 rounded-full border text-xs font-black ${isExecutiveReadOnly ? 'border-slate-300 bg-slate-100 text-slate-400 cursor-not-allowed' : 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
                     >
                       1공구(휘강) {zoneProgress.zone1.rate}%
                     </button>
                     <button
                       onClick={() => scrollToExecutiveProgressDetail('2공구')}
-                      className="inline-flex items-center px-3 py-1.5 rounded-full border border-rose-200 bg-rose-50 text-rose-700 text-xs font-black hover:bg-rose-100"
+                      disabled={isExecutiveReadOnly}
+                      className={`inline-flex items-center px-3 py-1.5 rounded-full border text-xs font-black ${isExecutiveReadOnly ? 'border-slate-300 bg-slate-100 text-slate-400 cursor-not-allowed' : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'}`}
                     >
                       2공구(오엔) {zoneProgress.zone2.rate}%
                     </button>
                     <button
                       onClick={() => scrollToExecutiveProgressDetail('전체')}
-                      className="inline-flex items-center px-3 py-1.5 rounded-full border border-slate-300 bg-slate-100 text-slate-700 text-xs font-black hover:bg-slate-200"
+                      disabled={isExecutiveReadOnly}
+                      className={`inline-flex items-center px-3 py-1.5 rounded-full border text-xs font-black ${isExecutiveReadOnly ? 'border-slate-300 bg-slate-100 text-slate-400 cursor-not-allowed' : 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
                     >
                       전체 {progressRate}%
                     </button>
