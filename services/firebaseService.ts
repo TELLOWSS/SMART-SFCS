@@ -26,6 +26,17 @@ export interface ApprovalLeadTimeEventRecord {
     createdAt: string;
 }
 
+export interface GangformPtwForceEditEventRecord {
+    buildingId: string;
+    buildingName: string;
+    floor: string;
+    previousStatus: GangformPtwStatus;
+    nextStatus: GangformPtwStatus;
+    reason: string;
+    operatorRole: '제작자';
+    createdAt: string;
+}
+
 // ==================================================================================
 // [설정 완료] 사용자가 제공한 Firebase 키 적용됨
 // 이 설정값은 프로젝트 식별용이며, 실제 보안은 Firebase Console의 보안 규칙(Rules)으로 관리됩니다.
@@ -282,6 +293,19 @@ export const subscribeApprovalLeadTimeEvents = (
     });
 
     return unsubscribe;
+};
+
+export const saveGangformPtwForceEditEvent = async (event: Omit<GangformPtwForceEditEventRecord, 'createdAt'>) => {
+    if (!db) return;
+
+    try {
+        await addDoc(collection(db, "ptw_force_edit_events"), {
+            ...event,
+            createdAt: new Date().toISOString()
+        });
+    } catch (e) {
+        console.error("PTW force-edit event save failed:", e);
+    }
 };
 
 export const updateUnitStatus = async () => {};

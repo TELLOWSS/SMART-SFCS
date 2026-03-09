@@ -59,6 +59,7 @@ import {
     subscribeToGangformPtwData,
     GangformPtwStoredMap,
     saveApprovalLeadTimeEvent,
+    saveGangformPtwForceEditEvent,
     subscribeApprovalLeadTimeEvents,
     type ApprovalLeadTimeEventRecord
 } from './services/firebaseService';
@@ -2218,6 +2219,7 @@ const App: React.FC = () => {
                     <GangformPTW
                       buildingId={selectedPtwBuilding.name}
                       role={currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR ? 'admin' : 'worker'}
+                      canForceEdit={currentUserRole === UserRole.CREATOR}
                       initialData={gangformPtwByBuilding[selectedPtwBuilding.id]?.payload}
                       initialStatus={gangformPtwByBuilding[selectedPtwBuilding.id]?.status || 'draft'}
                       focusFloorSignal={ptwFocusSignal}
@@ -2337,6 +2339,39 @@ const App: React.FC = () => {
                         return next;
                       });
                       }}
+                      onForceStatusChange={(nextStatus, reason) => {
+                      const now = new Date().toISOString();
+                      addNotification(`[${selectedPtwBuilding.name}] 제작자 권한으로 PTW 상태가 ${nextStatus}(으)로 수정되었습니다. 사유: ${reason}`, 'warning');
+                      setGangformPtwByBuilding(prev => {
+                        const current = prev[selectedPtwBuilding.id];
+                        if (!current) return prev;
+
+                        void saveGangformPtwForceEditEvent({
+                          buildingId: selectedPtwBuilding.id,
+                          buildingName: selectedPtwBuilding.name,
+                          floor: current.payload?.floor || '-',
+                          previousStatus: current.status,
+                          nextStatus,
+                          reason,
+                          operatorRole: '제작자'
+                        });
+
+                        const next = {
+                          ...prev,
+                          [selectedPtwBuilding.id]: {
+                            ...current,
+                            status: nextStatus,
+                            updatedAt: now,
+                            requestedAt: nextStatus === 'requested' ? (current.requestedAt || now) : nextStatus === 'draft' ? null : current.requestedAt || null,
+                            approvedAt: nextStatus === 'approved' ? (current.approvedAt || now) : (nextStatus === 'requested' || nextStatus === 'draft' || nextStatus === 'rejected') ? null : current.approvedAt || null,
+                            completedAt: nextStatus === 'completed' ? (current.completedAt || now) : null
+                          }
+                        };
+
+                        saveGangformPtwData(next as GangformPtwStoredMap);
+                        return next;
+                      });
+                    }}
                     />
                   </div>
                 )}

@@ -13,6 +13,7 @@ type Role = 'worker' | 'admin';
 interface GangformPTWProps {
   buildingId: string;
   role: Role;
+  canForceEdit?: boolean;
   initialData?: GangformPTWPayload;
   initialStatus?: ApprovalStatus;
   focusFloorSignal?: number;
@@ -21,22 +22,27 @@ interface GangformPTWProps {
   onCycleReset?: (payload: GangformPTWPayload) => Promise<void> | void;
   onApprove?: () => Promise<void> | void;
   onReject?: () => Promise<void> | void;
+  onForceStatusChange?: (status: ApprovalStatus, reason: string) => Promise<void> | void;
 }
 
 interface GangformPTWAdminProps {
   buildingId: string;
+  canForceEdit?: boolean;
   initialData?: GangformPTWPayload;
   initialStatus?: ApprovalStatus;
   onApprove?: () => Promise<void> | void;
   onReject?: () => Promise<void> | void;
+  onForceStatusChange?: (status: ApprovalStatus, reason: string) => Promise<void> | void;
 }
 
 const GangformPTWAdmin: React.FC<GangformPTWAdminProps> = ({
   buildingId,
+  canForceEdit = false,
   initialData,
   initialStatus = 'draft',
   onApprove,
-  onReject
+  onReject,
+  onForceStatusChange
 }) => {
   const [payload, setPayload] = useState<GangformPTWPayload>(normalizeGangformPayload(buildingId, initialData));
   const [status, setStatus] = useState<ApprovalStatus>(initialStatus);
@@ -69,8 +75,8 @@ const GangformPTWAdmin: React.FC<GangformPTWAdminProps> = ({
     }
   };
 
-  const shareAdminMessage = (shareStatus: '승인 요청' | '승인 완료') => {
-    const title = shareStatus === '승인 요청' ? 'SMART-SFCS 갱폼 승인 요청' : 'SMART-SFCS 갱폼 승인 완료';
+  const shareAdminMessage = (shareStatus: '승인 요청' | '인상 진행') => {
+    const title = shareStatus === '승인 요청' ? 'SMART-SFCS 갱폼 승인 요청' : 'SMART-SFCS 갱폼 인상 진행';
     const text = buildSmartSfcsShareText({
       workType: '갱폼 인상',
       building: payload.building || buildingId,
@@ -78,6 +84,24 @@ const GangformPTWAdmin: React.FC<GangformPTWAdminProps> = ({
       status: shareStatus
     });
     handleShareMessage(title, text);
+  };
+
+  const handleForceStatusChange = async (nextStatus: ApprovalStatus) => {
+    if (!canForceEdit || isSubmitting) return;
+    const reason = window.prompt('강제 수정 사유를 입력하세요. (필수)', '');
+    if (!reason || !reason.trim()) {
+      alert('강제 수정 사유는 필수입니다.');
+      return;
+    }
+    if (!window.confirm(`제작자 권한으로 상태를 '${nextStatus}'(으)로 수정하시겠습니까?`)) return;
+
+    try {
+      setIsSubmitting(true);
+      await onForceStatusChange?.(nextStatus, reason.trim());
+      setStatus(nextStatus);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -153,13 +177,43 @@ const GangformPTWAdmin: React.FC<GangformPTWAdminProps> = ({
         </button>
       </div>
 
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-black text-slate-700">알림 공유 항목</p>
+        <p className="text-[11px] text-slate-600 mt-1">공종(갱폼 인상), 동/층, 현재 상태(승인 요청 또는 인상 진행) 메시지를 공유합니다.</p>
+      </div>
+
       {status === 'approved' && (
-        <button
-          onClick={() => shareAdminMessage('승인 완료')}
-          className="px-4 py-2 rounded-xl bg-slate-800 text-white text-sm font-black"
-        >
-          🚀 알림 공유하기
-        </button>
+        <div className="space-y-2">
+          <button
+            onClick={() => shareAdminMessage('인상 진행')}
+            className="px-4 py-2 rounded-xl bg-slate-800 text-white text-sm font-black"
+          >
+            🚀 알림 공유하기
+          </button>
+          <p className="text-[11px] text-slate-500">
+            공유 내용: 공종(갱폼 인상), 동/층, 현재 상태(인상 진행)
+          </p>
+        </div>
+      )}
+
+      {canForceEdit && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 space-y-2">
+          <h3 className="text-sm font-black text-rose-700">제작자 권한 · 상태 강제 수정</h3>
+          <p className="text-[11px] text-rose-600">오입력/오처리 복구가 필요할 때만 사용하세요.</p>
+          <div className="flex flex-wrap gap-2">
+            {(['draft', 'requested', 'approved', 'completed', 'rejected'] as ApprovalStatus[]).map((nextStatus) => (
+              <button
+                key={nextStatus}
+                type="button"
+                onClick={() => handleForceStatusChange(nextStatus)}
+                disabled={isSubmitting || status === nextStatus}
+                className="px-3 py-1.5 rounded-lg text-xs font-black border border-rose-200 bg-white text-rose-700 disabled:opacity-40"
+              >
+                {nextStatus}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </section>
   );
@@ -168,6 +222,7 @@ const GangformPTWAdmin: React.FC<GangformPTWAdminProps> = ({
 const GangformPTW: React.FC<GangformPTWProps> = ({
   buildingId,
   role,
+  canForceEdit = false,
   initialData,
   initialStatus = 'draft',
   focusFloorSignal,
@@ -175,7 +230,8 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
   onComplete,
   onCycleReset,
   onApprove,
-  onReject
+  onReject,
+  onForceStatusChange
 }) => {
   if (role === 'worker') {
     return (
@@ -194,10 +250,12 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
   return (
     <GangformPTWAdmin
       buildingId={buildingId}
+      canForceEdit={canForceEdit}
       initialData={initialData}
       initialStatus={initialStatus}
       onApprove={onApprove}
       onReject={onReject}
+      onForceStatusChange={onForceStatusChange}
     />
   );
 };

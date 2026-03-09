@@ -564,6 +564,11 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
         안전 작업 허가(PTW) 발급 요청
       </button>
 
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-black text-slate-700">알림 공유 시 전달되는 내용</p>
+        <p className="text-[11px] text-slate-600 mt-1">공종(갱폼 인상), 동/층, 현재 상태(승인 요청 또는 인상 진행) 정보를 공유합니다.</p>
+      </div>
+
       {status === 'requested' && (
         <button
           onClick={() => shareGangformMessage('승인 요청')}
@@ -576,6 +581,9 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       {(status === 'approved' || status === 'completed') && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
           <h3 className="text-sm font-black text-emerald-700">인상중 증빙 등록</h3>
+          <p className="text-[11px] text-emerald-700/90">
+            인상중 상태에서 작업중 사진을 등록한 뒤, 아래 "인상 완료 처리 (별도 절차)" 버튼으로 다음 단계로 전환됩니다.
+          </p>
           <label className="inline-flex items-center px-3 py-2 rounded-lg bg-emerald-700 text-white text-xs font-bold cursor-pointer">
             {uploadingKey === DURING_WORK_KEY ? '업로드 중...' : '작업중 안전블럭체결 업로드'}
             <input

@@ -5,6 +5,27 @@ export interface SmartSfcsShareTemplateParams {
   status: '승인 요청' | '승인 완료' | string;
 }
 
+const copyTextFallback = async (text: string): Promise<boolean> => {
+  if (typeof document === 'undefined') return false;
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const success = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return Boolean(success);
+  } catch {
+    return false;
+  }
+};
+
 const showShareToast = (message: string) => {
   if (typeof document === 'undefined') return;
 
@@ -36,32 +57,57 @@ const showShareToast = (message: string) => {
 };
 
 export const handleShareMessage = async (title: string, text: string) => {
+  if (!text?.trim()) {
+    showShareToast('공유할 내용이 비어 있습니다.');
+    return;
+  }
+
   try {
-    if (navigator.share) {
+    const canUseNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+    const canUseClipboard = typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.writeText);
+
+    if (canUseNativeShare) {
       await navigator.share({ title, text });
+      showShareToast('공유 창 전송 완료');
       return;
     }
 
-    if (navigator.clipboard?.writeText) {
+    if (canUseClipboard) {
       await navigator.clipboard.writeText(text);
-      showShareToast('복사 완료');
+      showShareToast('PC 환경: 메시지를 클립보드에 복사했습니다.');
       return;
     }
 
-    window.prompt('아래 메시지를 복사하세요:', text);
-    showShareToast('복사 완료');
+    const copied = await copyTextFallback(text);
+    if (copied) {
+      showShareToast('메시지 복사 완료');
+      return;
+    }
+
+    window.prompt('공유창을 사용할 수 없어 수동 복사가 필요합니다. 아래 메시지를 복사하세요:', text);
+    showShareToast('수동 복사를 진행해 주세요.');
   } catch (error) {
-    if (navigator.clipboard?.writeText) {
+    const canUseClipboard = typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.writeText);
+
+    if (canUseClipboard) {
       try {
         await navigator.clipboard.writeText(text);
-        showShareToast('복사 완료');
+        showShareToast('공유창 실패: 메시지를 클립보드에 복사했습니다.');
         return;
       } catch {
         // ignore
       }
     }
-    window.prompt('아래 메시지를 복사하세요:', text);
-    showShareToast('복사 완료');
+
+    const copied = await copyTextFallback(text);
+    if (copied) {
+      showShareToast('공유창 실패: 메시지 복사 완료');
+      return;
+    }
+
+    const reason = error instanceof Error && error.message ? `(${error.message})` : '';
+    window.prompt(`공유 실패 ${reason} 수동 복사를 진행해 주세요:`, text);
+    showShareToast('공유 실패: 수동 복사가 필요합니다.');
   }
 };
 
