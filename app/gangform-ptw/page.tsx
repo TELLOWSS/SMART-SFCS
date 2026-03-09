@@ -81,18 +81,18 @@ const GangformPTWPage: React.FC = () => {
     return FALLBACK_BUILDINGS.map((building) => ({ id: building.id, name: building.name }));
   }, [buildings]);
 
-  const getBuildingPtwStatus = (buildingId: string): '진행 전' | '승인 대기' | '허가 발급' | '작업 완료' => {
+  const getBuildingPtwStatus = (buildingId: string): '진행 전' | '승인 대기' | '인상중' | '인상 완료' => {
     const ptwStatus = gangformPtwByBuilding[buildingId]?.status;
     if (ptwStatus === 'requested') return '승인 대기';
-    if (ptwStatus === 'approved') return '허가 발급';
-    if (ptwStatus === 'completed') return '작업 완료';
+    if (ptwStatus === 'approved') return '인상중';
+    if (ptwStatus === 'completed') return '인상 완료';
 
     const targetBuilding = buildings.find((building) => building.id === buildingId);
     if (!targetBuilding) return '진행 전';
 
     const activeUnits = targetBuilding.floors.flatMap((floor) => floor.units).filter((unit) => !unit.isDeadUnit);
     if (activeUnits.some((unit) => unit.status === ProcessStatus.APPROVAL_REQ)) return '승인 대기';
-    if (activeUnits.length > 0 && activeUnits.every((unit) => unit.status === ProcessStatus.CURED || unit.status === ProcessStatus.APPROVED)) return '작업 완료';
+    if (activeUnits.length > 0 && activeUnits.every((unit) => unit.status === ProcessStatus.CURED || unit.status === ProcessStatus.APPROVED)) return '인상 완료';
 
     return '진행 전';
   };
@@ -181,11 +181,11 @@ const GangformPTWPage: React.FC = () => {
               <span className="font-black text-slate-800">{item.name} {item.floorLabel}</span>
               <span
                 className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${
-                  item.status === '작업 완료'
+                  item.status === '인상 완료'
                     ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
                     : item.status === '승인 대기'
                     ? 'bg-orange-50 text-orange-600 border-orange-100'
-                    : item.status === '허가 발급'
+                    : item.status === '인상중'
                     ? 'bg-blue-50 text-blue-600 border-blue-100'
                     : 'bg-slate-100 text-slate-500 border-slate-200'
                 }`}

@@ -16,9 +16,10 @@ interface SiteMapProps {
   buildings: Building[];
   gangformByBuilding?: Record<string, GangformStatusRecord>;
   onSelectBuilding: (buildingId: string) => void;
+  onSelectGangformBuilding?: (buildingId: string) => void;
 }
 
-const SiteMap: React.FC<SiteMapProps> = ({ buildings, gangformByBuilding = {}, onSelectBuilding }) => {
+const SiteMap: React.FC<SiteMapProps> = ({ buildings, gangformByBuilding = {}, onSelectBuilding, onSelectGangformBuilding }) => {
   
   // [공구 구분 헬퍼 함수]
   const getZoneInfo = (buildingName: string) => {
@@ -100,7 +101,7 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, gangformByBuilding = {}, o
 
   const getGangformLabel = (status: GangformCellStatus | null): string => {
     if (status === 'requested') return '승인 요청';
-    if (status === 'approved') return '허가 발급';
+    if (status === 'approved') return '인상중';
     if (status === 'completed') return '인상 완료 (안전 확보)';
     if (status === 'rejected') return '반려';
     return '진행 전';
@@ -114,7 +115,8 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, gangformByBuilding = {}, o
 
   const getGangformBadgeClass = (status: GangformCellStatus | null): string => {
     if (status === 'requested') return 'bg-orange-500 animate-pulse';
-    if (status === 'approved' || status === 'completed') return 'bg-emerald-500';
+    if (status === 'approved') return 'bg-blue-500';
+    if (status === 'completed') return 'bg-emerald-500';
     if (status === 'rejected') return 'bg-red-500';
     return 'bg-slate-400/70';
   };
@@ -209,9 +211,22 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, gangformByBuilding = {}, o
                 </div>
 
                 {showGangformBadge && (
-                  <div className={`absolute top-1.5 right-1.5 min-w-5 h-5 px-1 rounded-full text-[9px] font-black text-white flex items-center justify-center z-10 shadow-md ${getGangformBadgeClass(gangformStatus)}`}>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (onSelectGangformBuilding) {
+                        onSelectGangformBuilding(building.id);
+                        return;
+                      }
+                      onSelectBuilding(building.id);
+                    }}
+                    title={`${building.name} 갱폼 PTW 화면으로 이동`}
+                    aria-label={`${building.name} 갱폼 PTW 화면으로 이동`}
+                    className={`absolute top-1.5 right-1.5 min-w-5 h-5 px-1 rounded-full text-[9px] font-black text-white flex items-center justify-center z-10 shadow-md ${getGangformBadgeClass(gangformStatus)}`}
+                  >
                     {gangformBadgeText}
-                  </div>
+                  </button>
                 )}
 
                 <div className="text-[10px] font-black text-slate-300 mb-1 tracking-tighter shadow-sm whitespace-nowrap mt-1">

@@ -402,8 +402,8 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     }
   };
 
-  const shareGangformMessage = (status: '승인 요청' | '승인 완료') => {
-    const title = status === '승인 요청' ? 'SMART-SFCS 갱폼 승인 요청' : 'SMART-SFCS 갱폼 승인 완료';
+  const shareGangformMessage = (status: '승인 요청' | '인상 진행') => {
+    const title = status === '승인 요청' ? 'SMART-SFCS 갱폼 승인 요청' : 'SMART-SFCS 갱폼 인상 진행';
     const text = buildSmartSfcsShareText({
       workType: '갱폼 인상',
       building: payload.building || buildingId,
@@ -575,7 +575,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
 
       {(status === 'approved' || status === 'completed') && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
-          <h3 className="text-sm font-black text-emerald-700">작업 중 사진 업로드</h3>
+          <h3 className="text-sm font-black text-emerald-700">인상중 증빙 등록</h3>
           <label className="inline-flex items-center px-3 py-2 rounded-lg bg-emerald-700 text-white text-xs font-bold cursor-pointer">
             {uploadingKey === DURING_WORK_KEY ? '업로드 중...' : '작업중 안전블럭체결 업로드'}
             <input
@@ -602,7 +602,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
           {status === 'approved' && (
             <>
               <button
-                onClick={() => shareGangformMessage('승인 완료')}
+                onClick={() => shareGangformMessage('인상 진행')}
                 className="w-full py-2.5 rounded-xl bg-slate-800 text-white text-sm font-black"
               >
                 🚀 알림 공유하기
@@ -612,7 +612,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
                 disabled={!payload.requiredPhotos.duringWork.작업중_안전블럭체결 || isSubmitting}
                 className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-black disabled:opacity-40"
               >
-                작업 완료 처리
+                인상 완료 처리 (별도 절차)
               </button>
             </>
           )}

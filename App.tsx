@@ -466,10 +466,10 @@ const App: React.FC = () => {
     scrollToTop();
   };
 
-  const getBuildingPtwStatus = (building: Building): '진행 전' | '승인 대기' | '완료' => {
+  const getBuildingPtwStatus = (building: Building): '진행 전' | '승인 대기' | '인상 완료' => {
     const activeUnits = building.floors.flatMap(f => f.units).filter(u => !u.isDeadUnit);
     if (activeUnits.some(u => u.status === ProcessStatus.APPROVAL_REQ)) return '승인 대기';
-    if (activeUnits.length > 0 && activeUnits.every(u => u.status === ProcessStatus.CURED || u.status === ProcessStatus.APPROVED)) return '완료';
+    if (activeUnits.length > 0 && activeUnits.every(u => u.status === ProcessStatus.CURED || u.status === ProcessStatus.APPROVED)) return '인상 완료';
     return '진행 전';
   };
 
@@ -480,8 +480,8 @@ const App: React.FC = () => {
         const status = (() => {
           const ptwStatus = ptwRecord?.status;
           if (ptwStatus === 'requested') return '승인 대기';
-          if (ptwStatus === 'completed') return '작업 완료';
-          if (ptwStatus === 'approved') return '허가 발급';
+          if (ptwStatus === 'approved') return '인상중';
+          if (ptwStatus === 'completed') return '인상 완료';
           if (ptwStatus === 'rejected' || ptwStatus === 'draft') return '진행 전';
           return getBuildingPtwStatus(building);
         })();
@@ -495,9 +495,9 @@ const App: React.FC = () => {
           statusEmoji: (() => {
             const ptwStatus = ptwRecord?.status;
             if (ptwStatus === 'requested') return '🟡';
-            if (ptwStatus === 'completed') return '🟢';
             if (ptwStatus === 'approved') return '🔵';
-            if (getBuildingPtwStatus(building) === '완료') return '🟢';
+            if (ptwStatus === 'completed') return '🟢';
+            if (getBuildingPtwStatus(building) === '인상 완료') return '🟢';
             return '⚪';
           })()
         };
@@ -1889,6 +1889,11 @@ const App: React.FC = () => {
                             setJumpTarget({ id, level: targetFloorLevel });
                         }
                     }
+                }} onSelectGangformBuilding={(id) => {
+                    handleNavigateTab('ptw');
+                    window.setTimeout(() => {
+                      focusPtwDetailView(id);
+                    }, 120);
                 }} />
                 
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end border-b border-slate-200 pb-6 gap-6">
@@ -2168,11 +2173,11 @@ const App: React.FC = () => {
                       >
                         <span className="text-sm font-black text-slate-800">{item.buildingName} {item.floor}</span>
                         <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${
-                          item.status === '작업 완료' || item.status === '완료'
+                          item.status === '인상 완료'
                             ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
                             : item.status === '승인 대기'
                             ? 'bg-orange-50 text-orange-600 border-orange-100'
-                          : item.status === '허가 발급'
+                          : item.status === '인상중'
                             ? 'bg-blue-50 text-blue-600 border-blue-100'
                             : 'bg-slate-100 text-slate-500 border-slate-200'
                         }`}>
@@ -2368,7 +2373,7 @@ const App: React.FC = () => {
           >
              {n.type === 'success' ? <Check className="w-5 h-5 text-emerald-500"/> : <Bell className="w-5 h-5 text-orange-500"/>}
              <div className="flex-1">
-                <p className="text-xs font-black text-slate-800">{n.type === 'success' ? '허가 발급' : '알림'}</p>
+                <p className="text-xs font-black text-slate-800">{n.type === 'success' ? '처리 완료' : '알림'}</p>
                 <p className="text-xs text-slate-600">{n.message}</p>
              </div>
           </div>
