@@ -370,6 +370,21 @@ const isZone2Building = (buildingName: string): boolean => {
   return ZONE2_BUILDING_NUMBERS.has(number);
 };
 
+const normalizeFloorLabel = (floorText?: string): string => {
+  const raw = (floorText || '').trim();
+  if (!raw) return '-';
+  const matched = raw.match(/\d+/);
+  if (!matched) return raw;
+  return `${matched[0]}층`;
+};
+
+const getElapsedMinutes = (requestedAt?: string | null): number | null => {
+  if (!requestedAt) return null;
+  const timestamp = new Date(requestedAt).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+};
+
 interface GangformPtwLocalRecord {
   payload: GangformPTWPayload;
   status: ApprovalStatus;
@@ -403,6 +418,8 @@ const App: React.FC = () => {
   const [executiveMonthFilter, setExecutiveMonthFilter] = useState<string>(() => parseExecutiveFiltersFromSearch(window.location.search).month);
   const [isExecutiveProgressHighlighted, setIsExecutiveProgressHighlighted] = useState(false);
   const [executiveProgressFocusLabel, setExecutiveProgressFocusLabel] = useState<string>('공정률');
+  const [ptwJumpedBuildingId, setPtwJumpedBuildingId] = useState<string | null>(null);
+  const [ptwFocusSignal, setPtwFocusSignal] = useState(0);
   
   const [currentTime, setCurrentTime] = useState<string>("");
   const [weather, setWeather] = useState<{temp: number, wind: number, condition: string} | null>(null);
@@ -422,6 +439,7 @@ const App: React.FC = () => {
   // [알림 시스템] 이전 빌딩 상태를 기억하기 위한 Ref
   const prevBuildingsRef = useRef<Building[]>([]);
   const analysisAlertKeyRef = useRef<string | null>(null);
+  const ptwDetailRef = useRef<HTMLDivElement | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -456,32 +474,64 @@ const App: React.FC = () => {
   };
 
   const ptwSummary = useMemo(() => {
-    return buildings.map((building) => ({
-      buildingId: building.id,
-      buildingName: building.name,
-      floor: gangformPtwByBuilding[building.id]?.payload?.floor || '-',
-      status: (() => {
-        const ptwStatus = gangformPtwByBuilding[building.id]?.status;
-        if (ptwStatus === 'requested') return '승인 대기';
-        if (ptwStatus === 'completed') return '작업 완료';
-        if (ptwStatus === 'approved') return '허가 발급';
-        if (ptwStatus === 'rejected' || ptwStatus === 'draft') return '진행 전';
-        return getBuildingPtwStatus(building);
-      })(),
-      statusEmoji: (() => {
-        const ptwStatus = gangformPtwByBuilding[building.id]?.status;
-        if (ptwStatus === 'requested') return '🟡';
-        if (ptwStatus === 'completed') return '🟢';
-        if (ptwStatus === 'approved') return '🔵';
-        if (getBuildingPtwStatus(building) === '완료') return '🟢';
-        return '⚪';
-      })()
-    }));
+    return buildings
+      .map((building) => {
+        const ptwRecord = gangformPtwByBuilding[building.id];
+        const status = (() => {
+          const ptwStatus = ptwRecord?.status;
+          if (ptwStatus === 'requested') return '승인 대기';
+          if (ptwStatus === 'completed') return '작업 완료';
+          if (ptwStatus === 'approved') return '허가 발급';
+          if (ptwStatus === 'rejected' || ptwStatus === 'draft') return '진행 전';
+          return getBuildingPtwStatus(building);
+        })();
+
+        return {
+          buildingId: building.id,
+          buildingName: building.name,
+          floor: normalizeFloorLabel(ptwRecord?.payload?.floor),
+          status,
+          elapsedMinutes: status === '승인 대기' ? getElapsedMinutes(ptwRecord?.requestedAt || null) : null,
+          statusEmoji: (() => {
+            const ptwStatus = ptwRecord?.status;
+            if (ptwStatus === 'requested') return '🟡';
+            if (ptwStatus === 'completed') return '🟢';
+            if (ptwStatus === 'approved') return '🔵';
+            if (getBuildingPtwStatus(building) === '완료') return '🟢';
+            return '⚪';
+          })()
+        };
+      })
+      .sort((a, b) => {
+        const aPriority = a.status === '승인 대기' ? 0 : 1;
+        const bPriority = b.status === '승인 대기' ? 0 : 1;
+        if (aPriority !== bPriority) return aPriority - bPriority;
+        if (a.status === '승인 대기' && b.status === '승인 대기') {
+          return (b.elapsedMinutes || 0) - (a.elapsedMinutes || 0);
+        }
+        return a.buildingName.localeCompare(b.buildingName, 'ko');
+      });
   }, [buildings, gangformPtwByBuilding]);
 
   const selectedPtwBuilding = useMemo(() => {
     return buildings.find(b => b.id === selectedPtwBuildingId) || buildings[0] || null;
   }, [buildings, selectedPtwBuildingId]);
+
+  const focusPtwDetailView = (buildingId: string) => {
+    setSelectedPtwBuildingId(buildingId);
+    setPtwJumpedBuildingId(buildingId);
+    setPtwFocusSignal(prev => prev + 1);
+    window.setTimeout(() => {
+      ptwDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      ptwDetailRef.current?.focus();
+    }, 60);
+  };
+
+  useEffect(() => {
+    if (!ptwJumpedBuildingId) return;
+    const timer = window.setTimeout(() => setPtwJumpedBuildingId(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [ptwJumpedBuildingId]);
 
   // [초기화] 브라우저 알림 권한 요청
   useEffect(() => {
@@ -2107,7 +2157,15 @@ const App: React.FC = () => {
                   <h3 className="text-sm font-black text-slate-700 mb-3">동별 현황 요약 보드</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {ptwSummary.map((item) => (
-                      <div key={item.buildingId} className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-center justify-between">
+                      <button
+                        key={item.buildingId}
+                        onClick={() => focusPtwDetailView(item.buildingId)}
+                        className={`rounded-xl border bg-slate-50 p-3 flex items-center justify-between transition-colors text-left ${
+                          ptwJumpedBuildingId === item.buildingId
+                            ? 'border-brand-primary ring-2 ring-brand-primary/25'
+                            : 'border-slate-200 hover:border-brand-primary/40'
+                        }`}
+                      >
                         <span className="text-sm font-black text-slate-800">{item.buildingName} {item.floor}</span>
                         <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${
                           item.status === '작업 완료' || item.status === '완료'
@@ -2119,8 +2177,9 @@ const App: React.FC = () => {
                             : 'bg-slate-100 text-slate-500 border-slate-200'
                         }`}>
                           {item.statusEmoji} {item.status}
+                          {item.status === '승인 대기' && typeof item.elapsedMinutes === 'number' ? ` · ${item.elapsedMinutes}분` : ''}
                         </span>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -2145,12 +2204,19 @@ const App: React.FC = () => {
                 </div>
 
                 {selectedPtwBuilding && (
-                  <GangformPTW
-                    buildingId={selectedPtwBuilding.name}
-                    role={currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR ? 'admin' : 'worker'}
-                    initialData={gangformPtwByBuilding[selectedPtwBuilding.id]?.payload}
-                    initialStatus={gangformPtwByBuilding[selectedPtwBuilding.id]?.status || 'draft'}
-                    onSubmit={(payload) => {
+                  <div ref={ptwDetailRef} tabIndex={-1} className="outline-none">
+                    {ptwJumpedBuildingId === selectedPtwBuilding.id && (
+                      <div className="mb-3 inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
+                        요약보드에서 {selectedPtwBuilding.name} PTW 뷰로 이동됨
+                      </div>
+                    )}
+                    <GangformPTW
+                      buildingId={selectedPtwBuilding.name}
+                      role={currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.CREATOR ? 'admin' : 'worker'}
+                      initialData={gangformPtwByBuilding[selectedPtwBuilding.id]?.payload}
+                      initialStatus={gangformPtwByBuilding[selectedPtwBuilding.id]?.status || 'draft'}
+                      focusFloorSignal={ptwFocusSignal}
+                      onSubmit={(payload) => {
                       const requestedAt = new Date().toISOString();
                       const beforePhotos = Object.values(payload.requiredPhotos.beforeWork).filter(Boolean).length;
                       addNotification(`[${selectedPtwBuilding.name}] PTW 승인요청 전송 (${beforePhotos}/4장 URL 포함)`, 'info');
@@ -2170,7 +2236,7 @@ const App: React.FC = () => {
                         return next;
                       });
                     }}
-                    onApprove={() => {
+                      onApprove={() => {
                       const approvedAt = new Date().toISOString();
                       addNotification(`[${selectedPtwBuilding.name}] 안전 작업 허가(PTW)가 발급되었습니다.`, 'success');
                       setGangformPtwByBuilding(prev => {
@@ -2204,7 +2270,7 @@ const App: React.FC = () => {
                         return next;
                       });
                     }}
-                    onComplete={(payload) => {
+                      onComplete={(payload) => {
                       return insertGangformPtwCompletedRecord(payload).then(() => {
                         addNotification(`[${selectedPtwBuilding.name} ${payload.floor}] PTW 작업이 완료되었습니다.`, 'success');
                         setPtwHistoryRefreshTick(prev => prev + 1);
@@ -2228,7 +2294,7 @@ const App: React.FC = () => {
                         });
                       });
                     }}
-                    onCycleReset={(payload) => {
+                      onCycleReset={(payload) => {
                       const now = new Date().toISOString();
                       addNotification(`[${selectedPtwBuilding.name}] ${payload.floor} 인상 준비 사이클을 시작했습니다.`, 'info');
                       setGangformPtwByBuilding(prev => {
@@ -2247,7 +2313,7 @@ const App: React.FC = () => {
                         return next;
                       });
                     }}
-                    onReject={() => {
+                      onReject={() => {
                       const now = new Date().toISOString();
                       addNotification(`[${selectedPtwBuilding.name}] PTW가 반려되었습니다.`, 'warning');
                       setGangformPtwByBuilding(prev => {
@@ -2265,8 +2331,9 @@ const App: React.FC = () => {
                         saveGangformPtwData(next as GangformPtwStoredMap);
                         return next;
                       });
-                    }}
-                  />
+                      }}
+                    />
+                  </div>
                 )}
               </section>
             )}

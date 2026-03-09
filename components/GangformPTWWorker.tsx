@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { uploadGangformPhoto, type GangformPhotoSlotKey } from '../lib/imageUploadUtil';
 import { handleShareMessage, buildSmartSfcsShareText } from '../lib/shareUtil';
 
@@ -46,6 +46,7 @@ interface GangformPTWWorkerProps {
   buildingId: string;
   initialData?: GangformPTWPayload;
   initialStatus?: ApprovalStatus;
+  focusFloorSignal?: number;
   onSubmit?: (payload: GangformPTWPayload) => Promise<void> | void;
   onComplete?: (payload: GangformPTWPayload) => Promise<void> | void;
   onCycleReset?: (payload: GangformPTWPayload) => Promise<void> | void;
@@ -170,6 +171,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   buildingId,
   initialData,
   initialStatus = 'draft',
+  focusFloorSignal = 0,
   onSubmit,
   onComplete,
   onCycleReset
@@ -180,6 +182,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [isPracticeMode, setIsPracticeMode] = useState(false);
   const [undoStack, setUndoStack] = useState<WorkerSnapshot[]>([]);
+  const floorInputRef = useRef<HTMLInputElement | null>(null);
 
   const storageKey = useMemo(() => getLocalStorageKey(buildingId), [buildingId]);
 
@@ -202,6 +205,16 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   useEffect(() => {
     writeLocalDraft(storageKey, { payload, status, practiceMode: isPracticeMode });
   }, [payload, status, isPracticeMode, storageKey]);
+
+  useEffect(() => {
+    if (!focusFloorSignal) return;
+    const timer = window.setTimeout(() => {
+      floorInputRef.current?.focus();
+      floorInputRef.current?.select();
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [focusFloorSignal, buildingId]);
 
   const pushUndoSnapshot = () => {
     setUndoStack((prev) => {
@@ -457,6 +470,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-600">층</label>
             <input
+              ref={floorInputRef}
               type="text"
               placeholder="예: 15층"
               value={payload.floor}

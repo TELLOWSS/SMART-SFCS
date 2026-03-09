@@ -15,6 +15,7 @@ interface GangformPTWProps {
   role: Role;
   initialData?: GangformPTWPayload;
   initialStatus?: ApprovalStatus;
+  focusFloorSignal?: number;
   onSubmit?: (payload: GangformPTWPayload) => Promise<void> | void;
   onComplete?: (payload: GangformPTWPayload) => Promise<void> | void;
   onCycleReset?: (payload: GangformPTWPayload) => Promise<void> | void;
@@ -169,6 +170,7 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
   role,
   initialData,
   initialStatus = 'draft',
+  focusFloorSignal,
   onSubmit,
   onComplete,
   onCycleReset,
@@ -181,6 +183,7 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
         buildingId={buildingId}
         initialData={initialData}
         initialStatus={initialStatus}
+        focusFloorSignal={focusFloorSignal}
         onSubmit={onSubmit}
         onComplete={onComplete}
         onCycleReset={onCycleReset}

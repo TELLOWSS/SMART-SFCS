@@ -1,18 +1,158 @@
-import React, { useMemo, useState } from 'react';
-import GangformPTW from '../../components/GangformPTW';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import GangformPTW, { type ApprovalStatus, type GangformPTWPayload } from '../../components/GangformPTW';
+import { ProcessStatus, type Building } from '../../types';
+import {
+  saveGangformPtwData,
+  subscribeToGangformPtwData,
+  syncBuildings,
+  type GangformPtwStoredMap
+} from '../../services/firebaseService';
+import { insertGangformPtwCompletedRecord } from '../../services/gangformPtwActions';
 
-const BUILDINGS = [
-  { id: '101', name: '101동', status: '승인 대기' },
-  { id: '102', name: '102동', status: '진행 전' },
-  { id: '103', name: '103동', status: '완료' }
+interface GangformPtwLocalRecord {
+  payload: GangformPTWPayload;
+  status: ApprovalStatus;
+  updatedAt: string;
+  requestedAt?: string | null;
+  approvedAt?: string | null;
+  completedAt?: string | null;
+}
+
+const FALLBACK_BUILDINGS = [
+  { id: '101', name: '101동' },
+  { id: '102', name: '102동' },
+  { id: '103', name: '103동' }
 ] as const;
 
+const normalizeFloorLabel = (floorText?: string): string => {
+  const raw = (floorText || '').trim();
+  if (!raw) return '-';
+  const matched = raw.match(/\d+/);
+  if (!matched) return raw;
+  return `${matched[0]}층`;
+};
+
+const getElapsedMinutes = (requestedAt?: string | null): number | null => {
+  if (!requestedAt) return null;
+  const timestamp = new Date(requestedAt).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+};
+
 const GangformPTWPage: React.FC = () => {
-  const [selectedId, setSelectedId] = useState<string>(BUILDINGS[0].id);
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [selectedId, setSelectedId] = useState<string>('');
+  const [gangformPtwByBuilding, setGangformPtwByBuilding] = useState<Record<string, GangformPtwLocalRecord>>({});
+  const [ptwJumpedBuildingId, setPtwJumpedBuildingId] = useState<string | null>(null);
+  const [ptwFocusSignal, setPtwFocusSignal] = useState(0);
+  const ptwDetailRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = syncBuildings((serverBuildings) => {
+      setBuildings(serverBuildings || []);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToGangformPtwData((records: GangformPtwStoredMap) => {
+      const mapped = Object.entries(records || {}).reduce((acc, [buildingId, record]) => {
+        if (!record || !record.payload) return acc;
+        acc[buildingId] = {
+          payload: record.payload as GangformPTWPayload,
+          status: record.status,
+          updatedAt: record.updatedAt,
+          requestedAt: record.requestedAt || null,
+          approvedAt: record.approvedAt || null,
+          completedAt: record.completedAt || null
+        };
+        return acc;
+      }, {} as Record<string, GangformPtwLocalRecord>);
+      setGangformPtwByBuilding(mapped);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const boardBuildings = useMemo(() => {
+    if (buildings.length > 0) {
+      return buildings.map((building) => ({ id: building.id, name: building.name }));
+    }
+
+    return FALLBACK_BUILDINGS.map((building) => ({ id: building.id, name: building.name }));
+  }, [buildings]);
+
+  const getBuildingPtwStatus = (buildingId: string): '진행 전' | '승인 대기' | '허가 발급' | '작업 완료' => {
+    const ptwStatus = gangformPtwByBuilding[buildingId]?.status;
+    if (ptwStatus === 'requested') return '승인 대기';
+    if (ptwStatus === 'approved') return '허가 발급';
+    if (ptwStatus === 'completed') return '작업 완료';
+
+    const targetBuilding = buildings.find((building) => building.id === buildingId);
+    if (!targetBuilding) return '진행 전';
+
+    const activeUnits = targetBuilding.floors.flatMap((floor) => floor.units).filter((unit) => !unit.isDeadUnit);
+    if (activeUnits.some((unit) => unit.status === ProcessStatus.APPROVAL_REQ)) return '승인 대기';
+    if (activeUnits.length > 0 && activeUnits.every((unit) => unit.status === ProcessStatus.CURED || unit.status === ProcessStatus.APPROVED)) return '작업 완료';
+
+    return '진행 전';
+  };
+
+  const ptwSummary = useMemo(() => {
+    return boardBuildings
+      .map((building) => {
+        const record = gangformPtwByBuilding[building.id];
+        const status = getBuildingPtwStatus(building.id);
+        const floorLabel = normalizeFloorLabel(record?.payload?.floor);
+        const elapsedMinutes = status === '승인 대기' ? getElapsedMinutes(record?.requestedAt || null) : null;
+
+        return {
+          ...building,
+          floorLabel,
+          status,
+          elapsedMinutes,
+          sortPriority: status === '승인 대기' ? 0 : 1
+        };
+      })
+      .sort((a, b) => {
+        if (a.sortPriority !== b.sortPriority) return a.sortPriority - b.sortPriority;
+        if (a.status === '승인 대기' && b.status === '승인 대기') {
+          return (b.elapsedMinutes || 0) - (a.elapsedMinutes || 0);
+        }
+        return a.name.localeCompare(b.name, 'ko');
+      });
+  }, [boardBuildings, gangformPtwByBuilding]);
+
+  useEffect(() => {
+    if (!selectedId && boardBuildings.length > 0) {
+      setSelectedId(boardBuildings[0].id);
+      return;
+    }
+
+    if (selectedId && !boardBuildings.some((building) => building.id === selectedId) && boardBuildings.length > 0) {
+      setSelectedId(boardBuildings[0].id);
+    }
+  }, [boardBuildings, selectedId]);
 
   const selectedBuilding = useMemo(() => {
-    return BUILDINGS.find((building) => building.id === selectedId) || BUILDINGS[0];
-  }, [selectedId]);
+    if (boardBuildings.length === 0) return null;
+    return boardBuildings.find((building) => building.id === selectedId) || boardBuildings[0];
+  }, [boardBuildings, selectedId]);
+
+  const focusPtwDetailView = (buildingId: string) => {
+    setSelectedId(buildingId);
+    setPtwJumpedBuildingId(buildingId);
+    setPtwFocusSignal((prev) => prev + 1);
+    window.setTimeout(() => {
+      ptwDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      ptwDetailRef.current?.focus();
+    }, 60);
+  };
+
+  useEffect(() => {
+    if (!ptwJumpedBuildingId) return;
+    const timer = window.setTimeout(() => setPtwJumpedBuildingId(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [ptwJumpedBuildingId]);
 
   return (
     <main className="min-h-screen bg-gray-50 text-gray-900 p-6 space-y-6">
@@ -28,21 +168,32 @@ const GangformPTWPage: React.FC = () => {
       <section className="bg-white border border-slate-200 rounded-2xl p-4">
         <h2 className="text-lg font-black mb-3">동별 현황 요약 보드</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {BUILDINGS.map((building) => (
-            <div key={building.id} className="rounded-xl border border-slate-200 p-3 bg-slate-50 flex justify-between items-center">
-              <span className="font-black text-slate-800">{building.name}</span>
+          {ptwSummary.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => focusPtwDetailView(item.id)}
+              className={`rounded-xl border p-3 bg-slate-50 flex justify-between items-center transition-colors ${
+                ptwJumpedBuildingId === item.id
+                  ? 'border-brand-primary ring-2 ring-brand-primary/25'
+                  : 'border-slate-200 hover:border-brand-primary/50'
+              }`}
+            >
+              <span className="font-black text-slate-800">{item.name} {item.floorLabel}</span>
               <span
                 className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${
-                  building.status === '완료'
+                  item.status === '작업 완료'
                     ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                    : building.status === '승인 대기'
+                    : item.status === '승인 대기'
                     ? 'bg-orange-50 text-orange-600 border-orange-100'
+                    : item.status === '허가 발급'
+                    ? 'bg-blue-50 text-blue-600 border-blue-100'
                     : 'bg-slate-100 text-slate-500 border-slate-200'
                 }`}
               >
-                {building.status}
+                {item.status}
+                {item.status === '승인 대기' && typeof item.elapsedMinutes === 'number' ? ` · ${item.elapsedMinutes}분` : ''}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       </section>
@@ -50,7 +201,7 @@ const GangformPTWPage: React.FC = () => {
       <section className="bg-white border border-slate-200 rounded-2xl p-4">
         <h2 className="text-sm font-black text-slate-700 mb-3">동 선택</h2>
         <div className="flex flex-wrap gap-2">
-          {BUILDINGS.map((building) => (
+          {boardBuildings.map((building) => (
             <button
               key={building.id}
               onClick={() => setSelectedId(building.id)}
@@ -66,7 +217,80 @@ const GangformPTWPage: React.FC = () => {
         </div>
       </section>
 
-      <GangformPTW buildingId={selectedBuilding.name} role="worker" />
+      {selectedBuilding && (
+        <div ref={ptwDetailRef} tabIndex={-1} className="outline-none">
+          {ptwJumpedBuildingId === selectedBuilding.id && (
+            <div className="mb-3 inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
+              요약보드에서 {selectedBuilding.name} PTW 뷰로 이동됨
+            </div>
+          )}
+          <GangformPTW
+            buildingId={selectedBuilding.name}
+            role="worker"
+            initialData={gangformPtwByBuilding[selectedBuilding.id]?.payload}
+            initialStatus={gangformPtwByBuilding[selectedBuilding.id]?.status || 'draft'}
+            focusFloorSignal={ptwFocusSignal}
+            onSubmit={(payload) => {
+            const requestedAt = new Date().toISOString();
+            setGangformPtwByBuilding((prev) => {
+              const next = {
+                ...prev,
+                [selectedBuilding.id]: {
+                  payload,
+                  status: 'requested' as ApprovalStatus,
+                  updatedAt: requestedAt,
+                  requestedAt,
+                  approvedAt: null,
+                  completedAt: null
+                }
+              };
+              saveGangformPtwData(next as GangformPtwStoredMap);
+              return next;
+            });
+            }}
+            onComplete={(payload) => {
+            return insertGangformPtwCompletedRecord(payload).then(() => {
+              setGangformPtwByBuilding((prev) => {
+                const completedAt = new Date().toISOString();
+                const current = prev[selectedBuilding.id];
+                const next = {
+                  ...prev,
+                  [selectedBuilding.id]: {
+                    payload,
+                    status: 'completed' as ApprovalStatus,
+                    updatedAt: completedAt,
+                    requestedAt: current?.requestedAt || null,
+                    approvedAt: current?.approvedAt || null,
+                    completedAt
+                  }
+                };
+
+                saveGangformPtwData(next as GangformPtwStoredMap);
+                return next;
+              });
+            });
+            }}
+            onCycleReset={(payload) => {
+            const now = new Date().toISOString();
+            setGangformPtwByBuilding((prev) => {
+              const next = {
+                ...prev,
+                [selectedBuilding.id]: {
+                  payload,
+                  status: 'draft' as ApprovalStatus,
+                  updatedAt: now,
+                  requestedAt: null,
+                  approvedAt: null,
+                  completedAt: null
+                }
+              };
+              saveGangformPtwData(next as GangformPtwStoredMap);
+              return next;
+            });
+            }}
+          />
+        </div>
+      )}
     </main>
   );
 };

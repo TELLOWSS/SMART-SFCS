@@ -192,6 +192,34 @@ const Manual: React.FC<ManualProps> = ({ onClose }) => {
                     </div>
                 </section>
 
+                {/* 섹션 2-1: PTW 빠른 이동 가이드 */}
+                <section>
+                    <div className="flex items-center space-x-3 mb-6">
+                        <Share2 className="w-5 h-5 text-brand-primary" />
+                        <h3 className="text-lg font-black text-slate-800 uppercase tracking-widest text-sm">PTW 빠른 이동 가이드</h3>
+                    </div>
+                    <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm space-y-4">
+                        <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                            PTW 탭의 <strong>동별 현황 요약 보드</strong>에서 동 카드를 누르면 해당 동의 갱폼 인상 PTW 상세 뷰로 즉시 이동합니다.
+                            이동 직후에는 카드 하이라이트와 안내 배지가 표시되며, 작업자 화면에서는 <strong>층 입력란</strong>에 자동 포커스됩니다.
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step 01</div>
+                                <div className="text-xs font-black text-slate-700 mt-1">요약보드 동 카드 클릭</div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step 02</div>
+                                <div className="text-xs font-black text-slate-700 mt-1">PTW 상세 뷰 자동 점프</div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step 03</div>
+                                <div className="text-xs font-black text-slate-700 mt-1">층 입력란 자동 포커스</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
                  {/* 섹션 3: 스마트 인텔리전스 (확장됨) */}
                  <section className="pb-10">
                     <div className="flex items-center space-x-3 mb-6">
@@ -479,21 +507,21 @@ const Manual: React.FC<ManualProps> = ({ onClose }) => {
                                 <div className="w-8 h-8 bg-brand-primary rounded-xl flex items-center justify-center font-black text-xs shadow-lg">01</div>
                                 <div>
                                     <div className="text-xs font-black text-white">현장 액션 발생</div>
-                                    <div className="text-[9px] text-slate-400 mt-0.5 whitespace-nowrap">상태 변경 및 데이터 업데이트</div>
+                                    <div className="text-[9px] text-slate-400 mt-0.5 whitespace-nowrap">상태 변경 및 PTW 입력 업데이트</div>
                                 </div>
                             </div>
                             <div className="flex items-center space-x-4 bg-white/5 p-5 rounded-2xl border border-white/10">
                                 <div className="w-8 h-8 bg-slate-700 rounded-xl flex items-center justify-center font-black text-xs">02</div>
                                 <div>
                                     <div className="text-xs font-black text-white">클라우드 병합</div>
-                                    <div className="text-[9px] text-slate-400 mt-0.5 whitespace-nowrap">유효 세대 판별 및 동기화</div>
+                                    <div className="text-[9px] text-slate-400 mt-0.5 whitespace-nowrap">Firestore site_data/gangform_ptw 동기화</div>
                                 </div>
                             </div>
                             <div className="flex items-center space-x-4 bg-white/5 p-5 rounded-2xl border border-white/10">
                                 <div className="w-8 h-8 bg-brand-accent rounded-xl flex items-center justify-center font-black text-xs shadow-lg">03</div>
                                 <div>
                                     <div className="text-xs font-black text-white">전역 브로드캐스트</div>
-                                    <div className="text-[9px] text-slate-400 mt-0.5 whitespace-nowrap">모든 클라이언트 화면 즉시 반영</div>
+                                    <div className="text-[9px] text-slate-400 mt-0.5 whitespace-nowrap">요약보드/상세뷰/배치도 즉시 반영</div>
                                 </div>
                             </div>
                         </div>
