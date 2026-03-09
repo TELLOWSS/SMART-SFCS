@@ -106,6 +106,12 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, gangformByBuilding = {}, o
     return '진행 전';
   };
 
+  const getGangformTooltipLabel = (status: GangformCellStatus | null, floor: number | null): string => {
+    const statusLabel = getGangformLabel(status);
+    if (!status || status === 'draft') return statusLabel;
+    return floor ? `${floor}층 ${statusLabel}` : statusLabel;
+  };
+
   const getGangformBadgeClass = (status: GangformCellStatus | null): string => {
     if (status === 'requested') return 'bg-orange-500 animate-pulse';
     if (status === 'approved' || status === 'completed') return 'bg-emerald-500';
@@ -170,16 +176,14 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, gangformByBuilding = {}, o
             const info = getActiveInfo(building);
             const zone = getZoneInfo(building.name);
             const activeFloor = parseInt(info.floor.replace(/[^0-9]/g, ''), 10);
+            const gangformRecord = gangformByBuilding[building.id];
+            const gangformFloor = parseGangformFloor(gangformRecord?.payload?.floor);
+            const gangformStatus = gangformRecord?.status ?? null;
 
             const floorRows = building.floors.map((floor) => {
-              const gangformRecord = gangformByBuilding[building.id];
-              const gangformFloor = parseGangformFloor(gangformRecord?.payload?.floor);
-              const gangformStatus = gangformFloor === floor.level ? gangformRecord?.status ?? null : null;
-
               return {
                 floorLevel: floor.level,
-                alStatus: getFloorAlStatus(building, floor.level),
-                gangformStatus
+                alStatus: getFloorAlStatus(building, floor.level)
               };
             });
 
@@ -187,8 +191,9 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, gangformByBuilding = {}, o
               || floorRows.find((row) => row.alStatus !== ProcessStatus.NOT_STARTED)
               || floorRows[floorRows.length - 1];
 
-            const tooltipText = `[${building.name} ${displayFloorRow?.floorLevel || '-'}층]\n▶ AL폼: ${displayFloorRow?.alStatus || ProcessStatus.NOT_STARTED}\n▶ 갱폼: ${getGangformLabel(displayFloorRow?.gangformStatus || null)}`;
-            const showGangformBadge = !!displayFloorRow?.gangformStatus;
+            const tooltipText = `[${building.name} ${displayFloorRow?.floorLevel || '-'}층]\n▶ AL폼: ${displayFloorRow?.alStatus || ProcessStatus.NOT_STARTED}\n▶ 갱폼 인상: ${getGangformTooltipLabel(gangformStatus, gangformFloor)}`;
+            const showGangformBadge = Boolean(gangformStatus && gangformStatus !== 'draft');
+            const gangformBadgeText = gangformFloor ? String(gangformFloor) : 'G';
             
             return (
               <button
@@ -204,8 +209,8 @@ const SiteMap: React.FC<SiteMapProps> = ({ buildings, gangformByBuilding = {}, o
                 </div>
 
                 {showGangformBadge && (
-                  <div className={`absolute top-1.5 right-1.5 w-5 h-5 rounded-full text-[10px] font-black text-white flex items-center justify-center z-10 shadow-md ${getGangformBadgeClass(displayFloorRow.gangformStatus)}`}>
-                    G
+                  <div className={`absolute top-1.5 right-1.5 min-w-5 h-5 px-1 rounded-full text-[9px] font-black text-white flex items-center justify-center z-10 shadow-md ${getGangformBadgeClass(gangformStatus)}`}>
+                    {gangformBadgeText}
                   </div>
                 )}
 
