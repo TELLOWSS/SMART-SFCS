@@ -26,6 +26,27 @@ export const BUILDING_DATA: BuildingStructure[] = [
     maxUnit: 4,
     // 1F: 1,3호 필로티, 2,4호 기타시설 / 2F: 1~4호 전체 PIT
     deadUnits: ['101', '102', '103', '104', '201', '202', '203', '204']
+  },
+  {
+    building: '2010동',
+    maxFloor: 28,
+    maxUnit: 6,
+    // 1F 활성: 102,104,106
+    deadUnits: ['101', '103', '105']
+  },
+  {
+    building: '2013동',
+    maxFloor: 28,
+    maxUnit: 6,
+    // 1F 활성: 101,103,105 / 2F~3F: 6세대 전체 활성
+    deadUnits: ['102', '104', '106']
+  },
+  {
+    building: '3003동',
+    maxFloor: 23,
+    maxUnit: 3,
+    // 1F 활성: 101,103
+    deadUnits: ['102']
   }
   // 추가 동은 이 패턴에 맞춰 개발자가 입력할 예정
 ];
