@@ -145,6 +145,67 @@ const generateInitialBuildings = (): Building[] => {
   });
 };
 
+const createUnitCode = (floorLevel: number, unitLine: number): string => `${floorLevel}${String(unitLine).padStart(2, '0')}`;
+
+const normalizeBuildingsWithDrawingData = (buildings: Building[]): Building[] => {
+  const structureMap = new Map(BUILDING_DATA.map((structure) => [structure.building, structure]));
+
+  return buildings.map((building) => {
+    const structure = structureMap.get(building.name);
+    if (!structure) return building;
+
+    const existingUnitMap = new Map<string, Unit>();
+    building.floors.forEach((floor) => {
+      floor.units.forEach((unit, index) => {
+        const parsedUnit = parseInt(String(unit.unitNumber).replace(/[^0-9]/g, ''), 10);
+        const fallbackCode = createUnitCode(floor.level, index + 1);
+        const unitCode = Number.isFinite(parsedUnit) ? String(parsedUnit) : fallbackCode;
+        existingUnitMap.set(unitCode, unit);
+      });
+    });
+
+    const deadUnitSet = new Set(structure.deadUnits);
+    const nowIso = new Date().toISOString();
+    const floors: Floor[] = [];
+
+    for (let floorLevel = 1; floorLevel <= structure.maxFloor; floorLevel++) {
+      const units: Unit[] = [];
+
+      for (let unitLine = 1; unitLine <= structure.maxUnit; unitLine++) {
+        const unitCode = createUnitCode(floorLevel, unitLine);
+        const existingUnit = existingUnitMap.get(unitCode);
+        const isDead = deadUnitSet.has(unitCode);
+        const wasDead = !!existingUnit?.isDeadUnit;
+
+        const status = (() => {
+          if (isDead) return ProcessStatus.CURED;
+          if (!existingUnit) return ProcessStatus.NOT_STARTED;
+          if (wasDead && existingUnit.status === ProcessStatus.CURED) return ProcessStatus.NOT_STARTED;
+          return existingUnit.status;
+        })();
+
+        units.push({
+          id: existingUnit?.id || `${structure.building}-${floorLevel}-${unitLine}`,
+          unitNumber: unitCode,
+          status,
+          lastUpdated: existingUnit?.lastUpdated || nowIso,
+          mepCompleted: isDead ? false : !!existingUnit?.mepCompleted,
+          isDeadUnit: isDead
+        });
+      }
+
+      floors.push({ level: floorLevel, units });
+    }
+
+    return {
+      ...building,
+      name: structure.building,
+      totalFloors: structure.maxFloor,
+      floors
+    };
+  });
+};
+
 const notifySystem = (title: string, body: string, soundUrl: string = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3') => {
   try {
     const audio = new Audio(soundUrl);
@@ -473,12 +534,20 @@ const App: React.FC = () => {
             setConnectionError(null); // 성공 시 에러 초기화
             
             if (serverBuildings.length > 0) {
+              const normalizedBuildings = normalizeBuildingsWithDrawingData(serverBuildings);
+
+              if (JSON.stringify(normalizedBuildings) !== JSON.stringify(serverBuildings)) {
+                saveAllBuildings(normalizedBuildings).catch((e) => {
+                  console.error('도면 정규화 데이터 재저장 실패:', e);
+                });
+              }
+
                 // [핵심 Fix] 알림 처리 중 에러가 발생해도 화면 갱신(setBuildings)이 누락되지 않도록 방어 코드 추가
                 try {
                     if (prevBuildingsRef.current.length > 0) {
                         const newNotifications: SystemNotification[] = [];
 
-                        serverBuildings.forEach(newB => {
+                  normalizedBuildings.forEach(newB => {
                             const oldB = prevBuildingsRef.current.find(b => b.id === newB.id);
                             if (!oldB) return;
 
@@ -550,9 +619,9 @@ const App: React.FC = () => {
                 }
 
                 // 현재 상태를 '이전 상태'로 저장
-                prevBuildingsRef.current = serverBuildings;
+                prevBuildingsRef.current = normalizedBuildings;
                 // [UI 업데이트] 무조건 실행 보장
-                setBuildings(serverBuildings);
+                setBuildings(normalizedBuildings);
             }
         },
         (error) => {
