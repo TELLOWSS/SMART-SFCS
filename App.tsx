@@ -43,6 +43,7 @@ import AnalysisView from './components/AnalysisView';
 import Manual from './components/Manual';
 import LiveChat from './components/LiveChat';
 import GangformPTW, { GangformPTWPayload, ApprovalStatus } from './components/GangformPTW';
+import { BUILDING_DATA } from './constants/buildingData';
 import { suggestSitePlan } from './services/geminiService';
 import { insertGangformPtwCompletedRecord, fetchGangformPtwHistory, type GangformPtwRecordRow } from './services/gangformPtwActions';
 import { handleShareMessage, buildSmartSfcsShareText } from './lib/shareUtil';
@@ -74,140 +75,6 @@ interface StatusModalData {
   nextStatus: ProcessStatus;
   isRevert: boolean;
 }
-
-interface DeadRule {
-  min: number;
-  max: number;
-  units: number[];
-}
-
-interface BuildingConfig {
-  id: string;
-  name: string;
-  floors: number;
-  unitsPerFloor: number;
-  dead: DeadRule[];
-}
-
-const BUILDING_CONFIGS: BuildingConfig[] = [
-  { 
-    id: '2001', name: '2001동', floors: 23, unitsPerFloor: 4, 
-    dead: [
-      { min: 21, max: 23, units: [3, 4] }, 
-      { min: 18, max: 20, units: [4] }, 
-      { min: 1, max: 1, units: [1, 2, 3] }
-    ] 
-  },
-  { 
-    id: '2002', name: '2002동', floors: 22, unitsPerFloor: 4, 
-    dead: [
-      { min: 1, max: 1, units: [2, 3] }
-    ] 
-  },
-  { 
-    id: '2003', name: '2003동', floors: 28, unitsPerFloor: 6, 
-    dead: [
-      { min: 24, max: 28, units: [5, 6] }, 
-      { min: 1, max: 1, units: [2, 3, 5] }
-    ] 
-  },
-  { 
-    id: '2004', name: '2004동', floors: 28, unitsPerFloor: 6, 
-    dead: [
-      { min: 18, max: 28, units: [1] },
-      { min: 21, max: 28, units: [2] },
-      { min: 1, max: 2, units: [1] },
-      { min: 1, max: 1, units: [4, 5] }
-    ] 
-  },
-  { 
-    id: '2005', name: '2005동', floors: 26, unitsPerFloor: 6, 
-    dead: [
-      { min: 17, max: 26, units: [1] },
-      { min: 20, max: 26, units: [2] },
-      { min: 26, max: 26, units: [3, 4] },
-      { min: 1, max: 1, units: [2, 4, 6] }
-    ] 
-  },
-  { 
-    id: '2006', name: '2006동', floors: 26, unitsPerFloor: 6, 
-    dead: [
-      { min: 25, max: 26, units: [1, 3] },
-      { min: 26, max: 26, units: [4] },
-      { min: 21, max: 26, units: [5] },
-      { min: 19, max: 26, units: [6] }, // Adjusted U6 based on count
-      { min: 1, max: 2, units: [1] },
-      { min: 1, max: 1, units: [3, 4, 5, 6] }
-    ] 
-  },
-  { 
-    id: '2007', name: '2007동', floors: 27, unitsPerFloor: 4, 
-    dead: [
-      { min: 26, max: 27, units: [3] }, 
-      { min: 23, max: 27, units: [4] }, 
-      { min: 1, max: 1, units: [2, 3] }
-    ] 
-  },
-  { 
-    id: '2008', name: '2008동', floors: 28, unitsPerFloor: 6, 
-    dead: [
-      { min: 1, max: 1, units: [4] }
-    ] 
-  },
-  { 
-    id: '2009', name: '2009동', floors: 28, unitsPerFloor: 6, 
-    dead: [
-      { min: 1, max: 1, units: [1, 3, 5] }
-    ] 
-  },
-  { 
-    id: '2010', name: '2010동', floors: 28, unitsPerFloor: 6, 
-    dead: [
-      { min: 1, max: 1, units: [1, 2, 5] } 
-    ] 
-  },
-  { 
-    id: '2011', name: '2011동', floors: 28, unitsPerFloor: 6, 
-    dead: [
-      { min: 1, max: 1, units: [2, 3] },
-      { min: 1, max: 2, units: [5, 6] }
-    ] 
-  },
-  { 
-    id: '2012', name: '2012동', floors: 28, unitsPerFloor: 6, 
-    dead: [
-      { min: 1, max: 1, units: [3] },
-      { min: 1, max: 2, units: [1, 2, 5] }
-    ] 
-  },
-  { 
-    id: '2013', name: '2013동', floors: 28, unitsPerFloor: 6, 
-    dead: [
-      { min: 22, max: 28, units: [1, 6] },
-      { min: 1, max: 1, units: [2, 4] },
-      { min: 1, max: 3, units: [5] }
-    ] 
-  },
-  { 
-    id: '3001', name: '3001동', floors: 21, unitsPerFloor: 4, 
-    dead: [
-      { min: 20, max: 21, units: [1, 2, 3] },
-      { min: 17, max: 21, units: [4] }
-    ] 
-  },
-  { 
-    id: '3002', name: '3002동', floors: 26, unitsPerFloor: 4, 
-    dead: [
-       { min: 1, max: 1, units: [2, 3] }
-    ] 
-  },
-  { 
-    id: '3003', name: '3003동', floors: 23, unitsPerFloor: 3, 
-    dead: [
-       { min: 19, max: 23, units: [2] }
-    ] 
-  }
-];
 
 const createBuildingsFromStructure = (structures: BuildingStructure[]): Building[] => {
   return structures.map((s, idx) => {
@@ -244,27 +111,37 @@ const createBuildingsFromStructure = (structures: BuildingStructure[]): Building
 };
 
 const generateInitialBuildings = (): Building[] => {
-  return BUILDING_CONFIGS.map(config => {
-    const floors = [];
-    for (let i = 1; i <= config.floors; i++) {
-      const units = [];
-      for (let u = 1; u <= config.unitsPerFloor; u++) {
-        const isDead = config.dead.some(rule => 
-          i >= rule.min && i <= rule.max && rule.units.includes(u)
-        );
+  return BUILDING_DATA.map((structure) => {
+    const floors: Floor[] = [];
+    const deadUnitSet = new Set(structure.deadUnits);
+    const buildingId = structure.building.replace(/[^0-9]/g, '');
+
+    for (let floorLevel = 1; floorLevel <= structure.maxFloor; floorLevel++) {
+      const units: Unit[] = [];
+
+      for (let unitLine = 1; unitLine <= structure.maxUnit; unitLine++) {
+        const unitCode = `${floorLevel}${String(unitLine).padStart(2, '0')}`;
+        const isDead = deadUnitSet.has(unitCode);
 
         units.push({
-          id: `${config.name}-${i}-${u}`,
-          unitNumber: `${i}0${u}`,
+          id: `${structure.building}-${floorLevel}-${unitLine}`,
+          unitNumber: unitCode,
           status: isDead ? ProcessStatus.CURED : ProcessStatus.NOT_STARTED,
           lastUpdated: new Date().toISOString(),
           mepCompleted: false,
           isDeadUnit: isDead
         });
       }
-      floors.push({ level: i, units });
+
+      floors.push({ level: floorLevel, units });
     }
-    return { id: `b-${config.id}`, name: config.name, totalFloors: config.floors, floors };
+
+    return {
+      id: `b-${buildingId}`,
+      name: structure.building,
+      totalFloors: structure.maxFloor,
+      floors
+    };
   });
 };
 
