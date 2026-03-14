@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, query, orderBy, limit, enableIndexedDbPersistence, initializeFirestore, CACHE_SIZE_UNLIMITED, deleteDoc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, query, orderBy, limit, enableIndexedDbPersistence, initializeFirestore, deleteDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Building, ChatMessage, AnalysisResult } from '../types';
 
@@ -59,8 +59,11 @@ try {
         const app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         
+        // [Fix] 캐시 크기를 제한하여 오래된 캐시 데이터가 과도하게 쌓이는 것을 방지한다.
+        // CACHE_SIZE_UNLIMITED 사용 시 기기마다 서로 다른 오래된 캐시 상태가 유지되어
+        // 양생완료 등의 상태가 기기마다 다르게 보이는 문제가 발생할 수 있다.
         db = initializeFirestore(app, {
-            cacheSizeBytes: CACHE_SIZE_UNLIMITED
+            cacheSizeBytes: 10 * 1024 * 1024 // 10MB
         });
 
         enableIndexedDbPersistence(db).catch((err) => {

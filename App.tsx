@@ -540,7 +540,9 @@ const App: React.FC = () => {
             if (serverBuildings.length > 0) {
               const normalizedBuildings = normalizeBuildingsWithDrawingData(serverBuildings);
 
-              if (JSON.stringify(normalizedBuildings) !== JSON.stringify(serverBuildings)) {
+              // [Fix] 캐시 데이터(isLive=false)로 Firebase를 덮어쓰면 기기마다 서로 다른 양생완료 상태가 생기는 문제 발생
+              // 반드시 실시간 서버 데이터(isLive=true)일 때만 정규화된 데이터를 Firebase에 재저장한다.
+              if (isLive && JSON.stringify(normalizedBuildings) !== JSON.stringify(serverBuildings)) {
                 saveAllBuildings(normalizedBuildings).catch((e) => {
                   console.error('도면 정규화 데이터 재저장 실패:', e);
                 });
