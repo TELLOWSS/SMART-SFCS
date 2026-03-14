@@ -17,6 +17,7 @@ interface RequiredPhotos {
     와이어로프_반자동샤클: string | null;
     발판상부_낙하물제거: string | null;
     하부통제_감시인: string | null;
+    작업승인신청_고리체결사진: string | null;
   };
   duringWork: {
     작업중_안전블럭체결: string | null;
@@ -67,7 +68,8 @@ export const BEFORE_WORK_KEYS = [
   'TBM_및_보호구',
   '와이어로프_반자동샤클',
   '발판상부_낙하물제거',
-  '하부통제_감시인'
+  '하부통제_감시인',
+  '작업승인신청_고리체결사진'
 ] as const satisfies readonly GangformPhotoSlotKey[];
 
 export const DURING_WORK_KEY = '작업중_안전블럭체결' as const satisfies GangformPhotoSlotKey;
@@ -123,7 +125,8 @@ const createDefaultPayload = (buildingId: string): GangformPTWPayload => ({
       TBM_및_보호구: null,
       와이어로프_반자동샤클: null,
       발판상부_낙하물제거: null,
-      하부통제_감시인: null
+      하부통제_감시인: null,
+      작업승인신청_고리체결사진: null
     },
     duringWork: {
       작업중_안전블럭체결: null
@@ -363,7 +366,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   };
 
   const markAsCompleted = async () => {
-    if (!payload.requiredPhotos.duringWork.작업중_안전블럭체결 || isSubmitting) return;
+    if (isSubmitting) return;
 
     try {
       setIsSubmitting(true);
@@ -524,7 +527,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       </div>
 
       <div>
-        <h3 className="text-sm font-black text-slate-700 mb-3">작업 전 필수 사진 4장</h3>
+        <h3 className="text-sm font-black text-slate-700 mb-3">작업 승인신청 필수 사진 5장</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {BEFORE_WORK_KEYS.map((key) => {
             const url = payload.requiredPhotos.beforeWork[key];
@@ -580,12 +583,12 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
 
       {(status === 'approved' || status === 'completed') && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
-          <h3 className="text-sm font-black text-emerald-700">인상중 증빙 등록</h3>
+          <h3 className="text-sm font-black text-emerald-700">인상 진행/완료 절차</h3>
           <p className="text-[11px] text-emerald-700/90">
-            인상중 상태에서 작업중 사진을 등록한 뒤, 아래 "인상 완료 처리 (별도 절차)" 버튼으로 다음 단계로 전환됩니다.
+            1) 승인신청 시 고리체결 사진이 이미 필수 반영됩니다. 2) 필요 시 인상 진행 중 추가 사진을 업로드합니다. 3) 작업 종료 시 인상 완료 처리 버튼을 누르세요.
           </p>
           <label className="inline-flex items-center px-3 py-2 rounded-lg bg-emerald-700 text-white text-xs font-bold cursor-pointer">
-            {uploadingKey === DURING_WORK_KEY ? '업로드 중...' : '작업중 안전블럭체결 업로드'}
+            {uploadingKey === DURING_WORK_KEY ? '업로드 중...' : '인상 진행 중 추가사진 업로드(선택)'}
             <input
               type="file"
               accept="image/*"
@@ -617,10 +620,10 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
               </button>
               <button
                 onClick={markAsCompleted}
-                disabled={!payload.requiredPhotos.duringWork.작업중_안전블럭체결 || isSubmitting}
+                disabled={isSubmitting}
                 className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-black disabled:opacity-40"
               >
-                인상 완료 처리 (별도 절차)
+                인상 완료 처리
               </button>
             </>
           )}

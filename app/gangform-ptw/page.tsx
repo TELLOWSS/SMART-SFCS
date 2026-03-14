@@ -43,14 +43,33 @@ const GangformPTWPage: React.FC = () => {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [gangformPtwByBuilding, setGangformPtwByBuilding] = useState<Record<string, GangformPtwLocalRecord>>({});
+  const [isRealtimeLive, setIsRealtimeLive] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [ptwJumpedBuildingId, setPtwJumpedBuildingId] = useState<string | null>(null);
   const [ptwFocusSignal, setPtwFocusSignal] = useState(0);
   const ptwDetailRef = useRef<HTMLDivElement | null>(null);
 
+  const syncTimeLabel = useMemo(() => {
+    if (!lastSyncedAt) return '-';
+    const parsed = new Date(lastSyncedAt);
+    if (Number.isNaN(parsed.getTime())) return '-';
+    return parsed.toLocaleTimeString('ko-KR', { hour12: false });
+  }, [lastSyncedAt]);
+
   useEffect(() => {
-    const unsubscribe = syncBuildings((serverBuildings) => {
-      setBuildings(serverBuildings || []);
-    });
+    const unsubscribe = syncBuildings(
+      (serverBuildings, isLive) => {
+        setBuildings(serverBuildings || []);
+        setIsRealtimeLive(isLive);
+        setSyncError(null);
+        setLastSyncedAt(new Date().toISOString());
+      },
+      (error) => {
+        setIsRealtimeLive(false);
+        setSyncError(error?.code ? `동기화 오류: ${error.code}` : '동기화 오류가 발생했습니다.');
+      }
+    );
     return () => unsubscribe();
   }, []);
 
@@ -69,6 +88,7 @@ const GangformPTWPage: React.FC = () => {
         return acc;
       }, {} as Record<string, GangformPtwLocalRecord>);
       setGangformPtwByBuilding(mapped);
+      setLastSyncedAt(new Date().toISOString());
     });
     return () => unsubscribe();
   }, []);
@@ -163,6 +183,21 @@ const GangformPTWPage: React.FC = () => {
         >
           히스토리 대시보드
         </a>
+      </section>
+
+      <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className={`px-2.5 py-1 rounded-full border font-black ${isRealtimeLive ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+            {isRealtimeLive ? '실시간 연동 정상 (PC/모바일)' : '오프라인/재연결 중'}
+          </span>
+          <span className="px-2.5 py-1 rounded-full border font-black bg-slate-50 text-slate-700 border-slate-200">
+            마지막 동기화: {syncTimeLabel}
+          </span>
+        </div>
+        <p className="text-[11px] text-slate-600">
+          같은 동/층에서 상태를 변경하면 PC와 핸드폰 양쪽 화면에 수 초 내 동일하게 반영되어야 정상입니다.
+        </p>
+        {syncError && <p className="text-[11px] font-bold text-red-600">{syncError}</p>}
       </section>
 
       <section className="bg-white border border-slate-200 rounded-2xl p-4">

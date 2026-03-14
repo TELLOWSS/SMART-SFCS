@@ -12,6 +12,7 @@ export const STORAGE_SLOT_PATH_MAP = {
   와이어로프_반자동샤클: 'wire_shackle',
   발판상부_낙하물제거: 'clear_debris',
   하부통제_감시인: 'lower_control',
+  작업승인신청_고리체결사진: 'hook_fastening_request',
   작업중_안전블럭체결: 'safety_block'
 } as const;
 

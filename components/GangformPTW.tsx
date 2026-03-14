@@ -121,7 +121,7 @@ const GangformPTWAdmin: React.FC<GangformPTWAdminProps> = ({
       </div>
 
       <div>
-        <h3 className="text-sm font-black text-slate-700 mb-2">작업 전 필수 사진 4장</h3>
+        <h3 className="text-sm font-black text-slate-700 mb-2">작업 승인신청 필수 사진 5장</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           {BEFORE_WORK_KEYS.map((key) => {
             const url = payload.requiredPhotos.beforeWork[key];

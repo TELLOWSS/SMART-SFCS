@@ -387,6 +387,10 @@ const App: React.FC = () => {
     () => analysisActionItems.filter(item => item.priority === 'high'),
     [analysisActionItems]
   );
+  const unreadNotificationCount = useMemo(
+    () => notifications.filter(n => !n.read).length,
+    [notifications]
+  );
 
   const handleNavigateTab = (tab: 'dashboard' | 'executive' | 'analysis' | 'manual' | 'ptw') => {
     const nextPath = getPathFromTab(tab);
@@ -1679,9 +1683,9 @@ const App: React.FC = () => {
                   </div>
               </div>
               <div className="flex items-center space-x-4 ml-auto lg:ml-0">
-                 <button onClick={() => setIsNotificationSidebarOpen(true)} className="relative p-3 bg-white/10 rounded-2xl border border-white/20 backdrop-blur-md hover:bg-white/20 transition-all shadow-lg active:scale-95">
+                  <button onClick={() => setIsNotificationSidebarOpen(prev => !prev)} className="relative p-3 bg-white/10 rounded-2xl border border-white/20 backdrop-blur-md hover:bg-white/20 transition-all shadow-lg active:scale-95">
                     <Bell className="w-6 h-6" />
-                    {notifications.length > 0 && <span className="absolute top-2 right-2 w-3 h-3 bg-brand-accent rounded-full border-2 border-brand-dark animate-pulse"></span>}
+                    {unreadNotificationCount > 0 && <span className="absolute top-2 right-2 w-3 h-3 bg-brand-accent rounded-full border-2 border-brand-dark animate-pulse"></span>}
                  </button>
               </div>
           </div>
@@ -2172,7 +2176,7 @@ const App: React.FC = () => {
                       onSubmit={(payload) => {
                       const requestedAt = new Date().toISOString();
                       const beforePhotos = Object.values(payload.requiredPhotos.beforeWork).filter(Boolean).length;
-                      addNotification(`[${selectedPtwBuilding.name}] PTW 승인요청 전송 (${beforePhotos}/4장 URL 포함)`, 'info');
+                      addNotification(`[${selectedPtwBuilding.name}] PTW 승인요청 전송 (${beforePhotos}/5장 URL 포함)`, 'info');
                       setGangformPtwByBuilding(prev => {
                         const next = {
                           ...prev,
@@ -2342,6 +2346,66 @@ const App: React.FC = () => {
 
       </main>
       
+      {isNotificationSidebarOpen && (
+        <div className="fixed inset-0 z-[280] bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsNotificationSidebarOpen(false)}>
+          <aside
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-0 top-0 h-full w-full max-w-md bg-white border-l border-slate-200 shadow-2xl flex flex-col"
+          >
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-black text-slate-800">알림 센터</p>
+                <p className="text-[11px] text-slate-500">미확인 {unreadNotificationCount}건 / 전체 {notifications.length}건</p>
+              </div>
+              <button
+                onClick={() => setIsNotificationSidebarOpen(false)}
+                className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
+                aria-label="알림 패널 닫기"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+              <button
+                onClick={() => setNotifications(prev => prev.map(item => ({ ...item, read: true })))}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-black text-slate-700"
+              >
+                모두 읽음 처리
+              </button>
+              <button
+                onClick={() => setNotifications([])}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-black text-slate-700"
+              >
+                전체 삭제
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {notifications.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-sm font-bold text-slate-400">표시할 알림이 없습니다.</div>
+              ) : (
+                notifications.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n))}
+                    className={`w-full text-left rounded-xl border p-3 transition-colors ${
+                      item.read
+                        ? 'bg-white border-slate-200 text-slate-500'
+                        : 'bg-orange-50 border-orange-200 text-slate-700'
+                    }`}
+                  >
+                    <p className="text-xs font-black">{item.type === 'success' ? '처리 완료' : '알림'}</p>
+                    <p className="text-xs mt-1">{item.message}</p>
+                    <p className="text-[10px] mt-1.5 text-slate-400">{item.timestamp}</p>
+                  </button>
+                ))
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
+
       <div className="fixed bottom-0 left-0 right-0 md:top-auto md:left-auto md:bottom-6 md:right-6 z-[300] flex flex-col gap-3 pointer-events-none p-4 md:p-0 items-center md:items-end">
         {notifications
             .filter(n => !n.read && Date.now() - parseInt(n.id.split('.')[0]) < 5000)
