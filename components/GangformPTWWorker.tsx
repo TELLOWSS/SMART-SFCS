@@ -226,7 +226,10 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     const localSavedAt = parseIsoTimestamp(localDraft?.savedAt);
     const remoteSavedAt = parseIsoTimestamp(remoteUpdatedAt);
     const hasRemoteState = Boolean(initialData) || initialStatus !== 'draft' || remoteSavedAt > 0;
-    const shouldPreferRemote = hasRemoteState && (initialStatus !== 'draft' || remoteSavedAt >= localSavedAt);
+    // 다기기 실시간 동기화를 위해 서버 타임스탬프가 있으면 항상 서버 상태를 우선한다.
+    // 로컬 초안(savedAt)이 더 최신처럼 보여도 기기 시계 오차/오래된 초안 때문에
+    // 타 기기 변경사항이 가려질 수 있어 원격 우선으로 고정한다.
+    const shouldPreferRemote = hasRemoteState && (remoteSavedAt > 0 || initialStatus !== 'draft');
 
     if (localDraft && !shouldPreferRemote) {
       setPayload(normalizeGangformPayload(buildingId, localDraft.payload));
