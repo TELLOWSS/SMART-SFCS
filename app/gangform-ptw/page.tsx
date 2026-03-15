@@ -266,6 +266,26 @@ const GangformPTWPage: React.FC = () => {
             initialStatus={gangformPtwByBuilding[selectedBuilding.id]?.status || 'draft'}
             remoteUpdatedAt={gangformPtwByBuilding[selectedBuilding.id]?.updatedAt || null}
             focusFloorSignal={ptwFocusSignal}
+            onPayloadChange={(payload, workerStatus) => {
+            const now = new Date().toISOString();
+            setGangformPtwByBuilding((prev) => {
+              const current = prev[selectedBuilding.id];
+              const nextRecord = {
+                payload,
+                status: current?.status || workerStatus,
+                updatedAt: now,
+                requestedAt: current?.requestedAt || null,
+                approvedAt: current?.approvedAt || null,
+                completedAt: current?.completedAt || null
+              };
+              const next = {
+                ...prev,
+                [selectedBuilding.id]: nextRecord
+              };
+              void saveGangformPtwRecord(selectedBuilding.id, nextRecord);
+              return next;
+            });
+            }}
             onSubmit={(payload) => {
             const requestedAt = new Date().toISOString();
             setGangformPtwByBuilding((prev) => {

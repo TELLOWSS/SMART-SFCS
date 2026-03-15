@@ -2254,6 +2254,26 @@ const App: React.FC = () => {
                       initialStatus={gangformPtwByBuilding[selectedPtwBuilding.id]?.status || 'draft'}
                       remoteUpdatedAt={gangformPtwByBuilding[selectedPtwBuilding.id]?.updatedAt || null}
                       focusFloorSignal={ptwFocusSignal}
+                      onPayloadChange={(payload, workerStatus) => {
+                      const now = new Date().toISOString();
+                      setGangformPtwByBuilding(prev => {
+                        const current = prev[selectedPtwBuilding.id];
+                        const nextRecord = {
+                          payload,
+                          status: current?.status || workerStatus,
+                          updatedAt: now,
+                          requestedAt: current?.requestedAt || null,
+                          approvedAt: current?.approvedAt || null,
+                          completedAt: current?.completedAt || null
+                        };
+                        const next = {
+                          ...prev,
+                          [selectedPtwBuilding.id]: nextRecord
+                        };
+                        void saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
+                        return next;
+                      });
+                    }}
                       onSubmit={(payload) => {
                       const requestedAt = new Date().toISOString();
                       const beforePhotos = Object.values(payload.requiredPhotos.beforeWork).filter(Boolean).length;

@@ -49,6 +49,7 @@ interface GangformPTWWorkerProps {
   initialStatus?: ApprovalStatus;
   remoteUpdatedAt?: string | null;
   focusFloorSignal?: number;
+  onPayloadChange?: (payload: GangformPTWPayload, status: ApprovalStatus) => Promise<void> | void;
   onSubmit?: (payload: GangformPTWPayload) => Promise<void> | void;
   onComplete?: (payload: GangformPTWPayload) => Promise<void> | void;
   onCycleReset?: (payload: GangformPTWPayload) => Promise<void> | void;
@@ -195,6 +196,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   initialStatus = 'draft',
   remoteUpdatedAt,
   focusFloorSignal = 0,
+  onPayloadChange,
   onSubmit,
   onComplete,
   onCycleReset
@@ -398,17 +400,24 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     try {
       setUploadingKey(key);
       const { publicUrl } = await uploadGangformPhoto(file, 'beforeWork', key);
+      let nextPayload: GangformPTWPayload | null = null;
       pushUndoSnapshot();
       setPayload((prev) => ({
-        ...prev,
-        requiredPhotos: {
-          ...prev.requiredPhotos,
-          beforeWork: {
-            ...prev.requiredPhotos.beforeWork,
-            [key]: publicUrl
+        ...(nextPayload = {
+          ...prev,
+          requiredPhotos: {
+            ...prev.requiredPhotos,
+            beforeWork: {
+              ...prev.requiredPhotos.beforeWork,
+              [key]: publicUrl
+            }
           }
-        }
+        })
       }));
+
+      if (!isPracticeMode && nextPayload) {
+        await onPayloadChange?.(nextPayload, status);
+      }
     } catch (error) {
       alert(error instanceof Error ? error.message : '이미지 업로드 실패');
     } finally {
@@ -421,17 +430,24 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     try {
       setUploadingKey(DURING_WORK_KEY);
       const { publicUrl } = await uploadGangformPhoto(file, 'duringWork', DURING_WORK_KEY);
+      let nextPayload: GangformPTWPayload | null = null;
       pushUndoSnapshot();
       setPayload((prev) => ({
-        ...prev,
-        requiredPhotos: {
-          ...prev.requiredPhotos,
-          duringWork: {
-            ...prev.requiredPhotos.duringWork,
-            작업중_안전블럭체결: publicUrl
+        ...(nextPayload = {
+          ...prev,
+          requiredPhotos: {
+            ...prev.requiredPhotos,
+            duringWork: {
+              ...prev.requiredPhotos.duringWork,
+              작업중_안전블럭체결: publicUrl
+            }
           }
-        }
+        })
       }));
+
+      if (!isPracticeMode && nextPayload) {
+        await onPayloadChange?.(nextPayload, status);
+      }
     } catch (error) {
       alert(error instanceof Error ? error.message : '작업중 사진 업로드 실패');
     } finally {

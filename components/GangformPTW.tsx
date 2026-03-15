@@ -18,6 +18,7 @@ interface GangformPTWProps {
   initialStatus?: ApprovalStatus;
   remoteUpdatedAt?: string | null;
   focusFloorSignal?: number;
+  onPayloadChange?: (payload: GangformPTWPayload, status: ApprovalStatus) => Promise<void> | void;
   onSubmit?: (payload: GangformPTWPayload) => Promise<void> | void;
   onComplete?: (payload: GangformPTWPayload) => Promise<void> | void;
   onCycleReset?: (payload: GangformPTWPayload) => Promise<void> | void;
@@ -228,6 +229,7 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
   initialStatus = 'draft',
   remoteUpdatedAt,
   focusFloorSignal,
+  onPayloadChange,
   onSubmit,
   onComplete,
   onCycleReset,
@@ -243,6 +245,7 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
         initialStatus={initialStatus}
         remoteUpdatedAt={remoteUpdatedAt}
         focusFloorSignal={focusFloorSignal}
+        onPayloadChange={onPayloadChange}
         onSubmit={onSubmit}
         onComplete={onComplete}
         onCycleReset={onCycleReset}
