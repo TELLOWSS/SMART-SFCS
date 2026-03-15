@@ -322,15 +322,19 @@ export const initializeDataIfEmpty = async (initialBuildings: Building[]) => {
     }
 
     try {
-        const { count, error } = await supabase
+        const { data, error } = await supabase
             .from(BUILDINGS_SYNC_TABLE)
-            .select('id', { count: 'exact', head: true });
+            .select('id');
 
         if (error) throw error;
         preferredBuildingsBackend = 'supabase';
 
-        if (!count) {
-            await upsertSupabaseBuildings(initialBuildings);
+        // count > 0 이면 전체를 스킵하는 대신, ID 단위로 누락된 동만 업로드한다.
+        // 이렇게 해야 테이블에 일부 동만 있을 때 나머지 동이 UI에서 사라지는 현상을 방지한다.
+        const existingIds = new Set((data || []).map((row: any) => String(row.id)));
+        const missingBuildings = initialBuildings.filter(b => !existingIds.has(b.id));
+        if (missingBuildings.length > 0) {
+            await upsertSupabaseBuildings(missingBuildings);
         }
     } catch (error) {
         if (shouldFallbackToFirebase(error)) {

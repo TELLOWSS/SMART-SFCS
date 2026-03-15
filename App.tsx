@@ -550,7 +550,15 @@ const App: React.FC = () => {
             setConnectionError(null);
             
             if (serverBuildings.length > 0) {
-              const normalizedBuildings = normalizeBuildingsWithDrawingData(serverBuildings);
+              // 서버에 없는 동은 초기 상태로 보완해서 표시한다 (방어 코드).
+              // Supabase 테이블에 일부 동만 있을 때 나머지 동이 UI에서 사라지는 현상을 방지한다.
+              const serverIds = new Set(serverBuildings.map(b => b.id));
+              const initialAll = generateInitialBuildings();
+              const missingLocally = initialAll.filter(b => !serverIds.has(b.id));
+              const mergedBuildings = missingLocally.length > 0
+                ? [...serverBuildings, ...missingLocally]
+                : serverBuildings;
+              const normalizedBuildings = normalizeBuildingsWithDrawingData(mergedBuildings);
 
               // [Fix] saveAllBuildings 경쟁 조건(Race Condition) 제거.
               // 기존에는 정규화된 데이터를 Firebase에 재저장할 때 여러 기기가 동시에 스냅샷을 받으면
