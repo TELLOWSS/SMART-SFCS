@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase/app';
-import { collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, getDocsFromServer, query, orderBy, limit, initializeFirestore, memoryLocalCache, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, getDocsFromServer, query, orderBy, limit, initializeFirestore, memoryLocalCache, deleteDoc, updateDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Building, ChatMessage, AnalysisResult } from '../types';
 
@@ -249,6 +249,36 @@ export const saveGangformPtwData = async (ptwByBuilding: GangformPtwStoredMap) =
         });
     } catch (e) {
         console.error("Gangform PTW save failed:", e);
+    }
+};
+
+export const saveGangformPtwRecord = async (buildingId: string, record: GangformPtwStoredRecord) => {
+    if (!db) return;
+
+    const persistedAt = record.updatedAt || new Date().toISOString();
+    const nextRecord: GangformPtwStoredRecord = {
+        ...record,
+        updatedAt: persistedAt
+    };
+    const ptwRef = doc(db, "site_data", "gangform_ptw");
+
+    try {
+        await updateDoc(ptwRef, {
+            [`records.${buildingId}`]: nextRecord,
+            updatedAt: persistedAt
+        });
+    } catch (error: any) {
+        if (error?.code === 'not-found') {
+            await setDoc(ptwRef, {
+                records: {
+                    [buildingId]: nextRecord
+                },
+                updatedAt: persistedAt
+            }, { merge: true });
+            return;
+        }
+
+        console.error("Gangform PTW record save failed:", error);
     }
 };
 

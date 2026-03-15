@@ -16,6 +16,7 @@ interface GangformPTWProps {
   canForceEdit?: boolean;
   initialData?: GangformPTWPayload;
   initialStatus?: ApprovalStatus;
+  remoteUpdatedAt?: string | null;
   focusFloorSignal?: number;
   onSubmit?: (payload: GangformPTWPayload) => Promise<void> | void;
   onComplete?: (payload: GangformPTWPayload) => Promise<void> | void;
@@ -225,6 +226,7 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
   canForceEdit = false,
   initialData,
   initialStatus = 'draft',
+  remoteUpdatedAt,
   focusFloorSignal,
   onSubmit,
   onComplete,
@@ -239,6 +241,7 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
         buildingId={buildingId}
         initialData={initialData}
         initialStatus={initialStatus}
+        remoteUpdatedAt={remoteUpdatedAt}
         focusFloorSignal={focusFloorSignal}
         onSubmit={onSubmit}
         onComplete={onComplete}

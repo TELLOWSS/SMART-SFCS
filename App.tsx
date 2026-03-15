@@ -57,6 +57,7 @@ import {
     subscribeToAnalysisResult, 
     saveAnalysisResult,
     saveGangformPtwData,
+    saveGangformPtwRecord,
     subscribeToGangformPtwData,
     GangformPtwStoredMap,
     saveApprovalLeadTimeEvent,
@@ -2225,24 +2226,26 @@ const App: React.FC = () => {
                       canForceEdit={currentUserRole === UserRole.CREATOR}
                       initialData={gangformPtwByBuilding[selectedPtwBuilding.id]?.payload}
                       initialStatus={gangformPtwByBuilding[selectedPtwBuilding.id]?.status || 'draft'}
+                      remoteUpdatedAt={gangformPtwByBuilding[selectedPtwBuilding.id]?.updatedAt || null}
                       focusFloorSignal={ptwFocusSignal}
                       onSubmit={(payload) => {
                       const requestedAt = new Date().toISOString();
                       const beforePhotos = Object.values(payload.requiredPhotos.beforeWork).filter(Boolean).length;
                       addNotification(`[${selectedPtwBuilding.name}] PTW 승인요청 전송 (${beforePhotos}/5장 URL 포함)`, 'info');
                       setGangformPtwByBuilding(prev => {
+                        const nextRecord = {
+                          payload,
+                          status: 'requested' as ApprovalStatus,
+                          updatedAt: requestedAt,
+                          requestedAt,
+                          approvedAt: null,
+                          completedAt: null
+                        };
                         const next = {
                           ...prev,
-                          [selectedPtwBuilding.id]: {
-                            payload,
-                            status: 'requested',
-                            updatedAt: requestedAt,
-                            requestedAt,
-                            approvedAt: null,
-                            completedAt: null
-                          }
+                          [selectedPtwBuilding.id]: nextRecord
                         };
-                        saveGangformPtwData(next as GangformPtwStoredMap);
+                        void saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
                         return next;
                       });
                     }}
@@ -2276,7 +2279,7 @@ const App: React.FC = () => {
                             approvedAt
                           }
                         };
-                        saveGangformPtwData(next as GangformPtwStoredMap);
+                        void saveGangformPtwRecord(selectedPtwBuilding.id, next[selectedPtwBuilding.id]);
                         return next;
                       });
                     }}
@@ -2287,19 +2290,20 @@ const App: React.FC = () => {
                         setGangformPtwByBuilding(prev => {
                           const completedAt = new Date().toISOString();
                           const current = prev[selectedPtwBuilding.id];
+                          const nextRecord = {
+                            payload,
+                            status: 'completed' as ApprovalStatus,
+                            updatedAt: completedAt,
+                            requestedAt: current?.requestedAt || null,
+                            approvedAt: current?.approvedAt || null,
+                            completedAt
+                          };
                           const next = {
                             ...prev,
-                            [selectedPtwBuilding.id]: {
-                              payload,
-                              status: 'completed' as ApprovalStatus,
-                              updatedAt: completedAt,
-                              requestedAt: current?.requestedAt || null,
-                              approvedAt: current?.approvedAt || null,
-                              completedAt
-                            }
+                            [selectedPtwBuilding.id]: nextRecord
                           };
 
-                          saveGangformPtwData(next as GangformPtwStoredMap);
+                          void saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
                           return next;
                         });
                       });
@@ -2308,18 +2312,19 @@ const App: React.FC = () => {
                       const now = new Date().toISOString();
                       addNotification(`[${selectedPtwBuilding.name}] ${payload.floor} 인상 준비 사이클을 시작했습니다.`, 'info');
                       setGangformPtwByBuilding(prev => {
+                        const nextRecord = {
+                          payload,
+                          status: 'draft' as ApprovalStatus,
+                          updatedAt: now,
+                          requestedAt: null,
+                          approvedAt: null,
+                          completedAt: null
+                        };
                         const next = {
                           ...prev,
-                          [selectedPtwBuilding.id]: {
-                            payload,
-                            status: 'draft' as ApprovalStatus,
-                            updatedAt: now,
-                            requestedAt: null,
-                            approvedAt: null,
-                            completedAt: null
-                          }
+                          [selectedPtwBuilding.id]: nextRecord
                         };
-                        saveGangformPtwData(next as GangformPtwStoredMap);
+                        void saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
                         return next;
                       });
                     }}
@@ -2338,7 +2343,7 @@ const App: React.FC = () => {
                             approvedAt: null
                           }
                         };
-                        saveGangformPtwData(next as GangformPtwStoredMap);
+                        void saveGangformPtwRecord(selectedPtwBuilding.id, next[selectedPtwBuilding.id]);
                         return next;
                       });
                       }}
@@ -2371,7 +2376,7 @@ const App: React.FC = () => {
                           }
                         };
 
-                        saveGangformPtwData(next as GangformPtwStoredMap);
+                        void saveGangformPtwRecord(selectedPtwBuilding.id, next[selectedPtwBuilding.id]);
                         return next;
                       });
                     }}

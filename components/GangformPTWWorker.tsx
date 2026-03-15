@@ -47,6 +47,7 @@ interface GangformPTWWorkerProps {
   buildingId: string;
   initialData?: GangformPTWPayload;
   initialStatus?: ApprovalStatus;
+  remoteUpdatedAt?: string | null;
   focusFloorSignal?: number;
   onSubmit?: (payload: GangformPTWPayload) => Promise<void> | void;
   onComplete?: (payload: GangformPTWPayload) => Promise<void> | void;
@@ -57,6 +58,7 @@ interface LocalDraftState {
   payload: GangformPTWPayload;
   status: ApprovalStatus;
   practiceMode: boolean;
+  savedAt?: string;
 }
 
 interface WorkerSnapshot {
@@ -94,7 +96,13 @@ const writeLocalDraft = (key: string, value: LocalDraftState) => {
   if (typeof window === 'undefined') return;
 
   try {
-    window.localStorage.setItem(key, JSON.stringify(value));
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({
+        ...value,
+        savedAt: new Date().toISOString()
+      })
+    );
   } catch {
     // 저장 실패 시 무시 (스토리지 용량/권한 이슈)
   }
@@ -170,10 +178,17 @@ const parseFloorNumber = (floorText: string): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const parseIsoTimestamp = (value?: string | null): number => {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   buildingId,
   initialData,
   initialStatus = 'draft',
+  remoteUpdatedAt,
   focusFloorSignal = 0,
   onSubmit,
   onComplete,
@@ -191,7 +206,13 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
 
   useEffect(() => {
     const localDraft = readLocalDraft(storageKey);
-    if (localDraft) {
+    const normalizedRemotePayload = normalizeGangformPayload(buildingId, initialData);
+    const localSavedAt = parseIsoTimestamp(localDraft?.savedAt);
+    const remoteSavedAt = parseIsoTimestamp(remoteUpdatedAt);
+    const hasRemoteState = Boolean(initialData) || initialStatus !== 'draft' || remoteSavedAt > 0;
+    const shouldPreferRemote = hasRemoteState && (initialStatus !== 'draft' || remoteSavedAt >= localSavedAt);
+
+    if (localDraft && !shouldPreferRemote) {
       setPayload(normalizeGangformPayload(buildingId, localDraft.payload));
       setStatus(localDraft.status);
       setIsPracticeMode(Boolean(localDraft.practiceMode));
@@ -199,11 +220,15 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       return;
     }
 
-    setPayload(normalizeGangformPayload(buildingId, initialData));
+    setPayload(normalizedRemotePayload);
     setStatus(initialStatus);
     setIsPracticeMode(false);
     setUndoStack([]);
-  }, [buildingId, initialData, initialStatus, storageKey]);
+
+    if (shouldPreferRemote) {
+      clearLocalDraft(storageKey);
+    }
+  }, [buildingId, initialData, initialStatus, remoteUpdatedAt, storageKey]);
 
   useEffect(() => {
     writeLocalDraft(storageKey, { payload, status, practiceMode: isPracticeMode });
