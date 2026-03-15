@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase/app';
-import { collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, getDocsFromServer, query, orderBy, limit, initializeFirestore, memoryLocalCache, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, getDocsFromServer, getDoc, query, orderBy, limit, initializeFirestore, memoryLocalCache, deleteDoc, updateDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { supabase } from '../lib/supabaseClient';
 import { Building, ChatMessage, AnalysisResult } from '../types';
@@ -495,20 +495,85 @@ export const subscribeToAnalysisResult = (callback: (result: AnalysisResult | nu
     return unsubscribe;
 };
 
-export const saveGangformPtwData = async (ptwByBuilding: GangformPtwStoredMap) => {
+const GANGFORM_PTW_SYNC_TABLE = 'sfcs_gangform_ptw_state';
+let preferredGangformPtwBackend: 'unknown' | 'firebase' | 'supabase' = 'unknown';
+
+interface SupabaseGangformPtwStateRow {
+    building_id: string;
+    payload: unknown;
+    status: GangformPtwStatus;
+    updated_at: string;
+    requested_at?: string | null;
+    approved_at?: string | null;
+    completed_at?: string | null;
+}
+
+const shouldFallbackToFirebaseForGangform = (error: any) => {
+    const message = String(error?.message || '').toLowerCase();
+    return error?.code === 'PGRST205'
+        || error?.code === '42P01'
+        || message.includes('could not find the table')
+        || message.includes('relation')
+        || message.includes(GANGFORM_PTW_SYNC_TABLE);
+};
+
+const toGangformSupabaseRow = (buildingId: string, record: GangformPtwStoredRecord): SupabaseGangformPtwStateRow => ({
+    building_id: buildingId,
+    payload: record.payload,
+    status: record.status,
+    updated_at: record.updatedAt,
+    requested_at: record.requestedAt || null,
+    approved_at: record.approvedAt || null,
+    completed_at: record.completedAt || null
+});
+
+const fromGangformSupabaseRows = (rows: SupabaseGangformPtwStateRow[]): GangformPtwStoredMap => {
+    return rows.reduce((acc, row) => {
+        acc[row.building_id] = {
+            payload: row.payload,
+            status: row.status,
+            updatedAt: row.updated_at,
+            requestedAt: row.requested_at || null,
+            approvedAt: row.approved_at || null,
+            completedAt: row.completed_at || null
+        };
+        return acc;
+    }, {} as GangformPtwStoredMap);
+};
+
+const fetchGangformPtwRowsFromSupabase = async (): Promise<GangformPtwStoredMap> => {
+    const { data, error } = await supabase
+        .from(GANGFORM_PTW_SYNC_TABLE)
+        .select('building_id, payload, status, updated_at, requested_at, approved_at, completed_at');
+
+    if (error) throw error;
+    return fromGangformSupabaseRows((data || []) as SupabaseGangformPtwStateRow[]);
+};
+
+const saveGangformPtwDataWithFirebase = async (ptwByBuilding: GangformPtwStoredMap) => {
     if (!db) return;
+
+    await runFirebaseWrite(() => setDoc(doc(db, "site_data", "gangform_ptw"), {
+        records: ptwByBuilding,
+        updatedAt: new Date().toISOString()
+    }));
+};
+
+const fetchGangformPtwDataFromFirebase = async (): Promise<GangformPtwStoredMap> => {
+    if (!db) return {};
+
     try {
-        await runFirebaseWrite(() => setDoc(doc(db, "site_data", "gangform_ptw"), {
-            records: ptwByBuilding,
-            updatedAt: new Date().toISOString()
-        }));
-    } catch (e) {
-        console.error("Gangform PTW save failed:", e);
-        throw e;
+        const snapshot = await getDoc(doc(db, "site_data", "gangform_ptw"));
+        if (!snapshot.exists()) return {};
+        const data = snapshot.data() as { records?: GangformPtwStoredMap };
+        return data.records || {};
+    } catch (error) {
+        console.warn('Firebase 갱폼 PTW 백필 소스 조회 실패:', error);
+        return {};
     }
 };
 
-export const saveGangformPtwRecord = async (buildingId: string, record: GangformPtwStoredRecord) => {
+const saveGangformPtwRecordWithFirebase = async (buildingId: string, record: GangformPtwStoredRecord) => {
     if (!db) return;
 
     const persistedAt = record.updatedAt || new Date().toISOString();
@@ -534,17 +599,13 @@ export const saveGangformPtwRecord = async (buildingId: string, record: Gangform
             return;
         }
 
-        console.error("Gangform PTW record save failed:", error);
         throw error;
     }
 };
 
-export const subscribeToGangformPtwData = (callback: (records: GangformPtwStoredMap) => void) => {
+const subscribeToGangformPtwDataWithFirebase = (callback: (records: GangformPtwStoredMap) => void) => {
     if (!db) return () => {};
 
-    // [Fix] includeMetadataChanges: true 및 fromCache 필터 제거.
-    // memoryLocalCache 환경에서는 fromCache:true 이벤트가 발생하지 않으므로
-    // 메타데이터 기반 필터링 없이 모든 스냅샷 이벤트를 처리한다.
     const unsubscribe = onSnapshot(doc(db, "site_data", "gangform_ptw"), (snapshot) => {
         if (!snapshot.exists()) {
             callback({});
@@ -558,6 +619,139 @@ export const subscribeToGangformPtwData = (callback: (records: GangformPtwStored
     });
 
     return unsubscribe;
+};
+
+const backfillSupabaseGangformPtwIfEmpty = async (supabaseRecords: GangformPtwStoredMap): Promise<GangformPtwStoredMap> => {
+    if (Object.keys(supabaseRecords).length > 0) return supabaseRecords;
+
+    const firebaseRecords = await fetchGangformPtwDataFromFirebase();
+    if (Object.keys(firebaseRecords).length === 0) return supabaseRecords;
+
+    const rows = Object.entries(firebaseRecords).map(([buildingId, record]) => {
+        const persistedAt = record.updatedAt || new Date().toISOString();
+        return toGangformSupabaseRow(buildingId, { ...record, updatedAt: persistedAt });
+    });
+
+    const { error } = await supabase
+        .from(GANGFORM_PTW_SYNC_TABLE)
+        .upsert(rows, { onConflict: 'building_id' });
+
+    if (error) throw error;
+    return firebaseRecords;
+};
+
+export const saveGangformPtwData = async (ptwByBuilding: GangformPtwStoredMap) => {
+    if (preferredGangformPtwBackend === 'firebase') {
+        await saveGangformPtwDataWithFirebase(ptwByBuilding);
+        return;
+    }
+
+    try {
+        const rows = Object.entries(ptwByBuilding).map(([buildingId, record]) => {
+            const persistedAt = record.updatedAt || new Date().toISOString();
+            return toGangformSupabaseRow(buildingId, { ...record, updatedAt: persistedAt });
+        });
+
+        if (rows.length > 0) {
+            const { error } = await supabase.from(GANGFORM_PTW_SYNC_TABLE).upsert(rows, { onConflict: 'building_id' });
+            if (error) throw error;
+        }
+        preferredGangformPtwBackend = 'supabase';
+    } catch (error) {
+        if (shouldFallbackToFirebaseForGangform(error)) {
+            preferredGangformPtwBackend = 'firebase';
+            await saveGangformPtwDataWithFirebase(ptwByBuilding);
+            return;
+        }
+
+        console.error("Gangform PTW save failed:", error);
+        throw error;
+    }
+};
+
+export const saveGangformPtwRecord = async (buildingId: string, record: GangformPtwStoredRecord) => {
+    if (preferredGangformPtwBackend === 'firebase') {
+        await saveGangformPtwRecordWithFirebase(buildingId, record);
+        return;
+    }
+
+    const persistedAt = record.updatedAt || new Date().toISOString();
+    const nextRecord: GangformPtwStoredRecord = { ...record, updatedAt: persistedAt };
+
+    try {
+        const { error } = await supabase
+            .from(GANGFORM_PTW_SYNC_TABLE)
+            .upsert(toGangformSupabaseRow(buildingId, nextRecord), { onConflict: 'building_id' });
+
+        if (error) throw error;
+        preferredGangformPtwBackend = 'supabase';
+    } catch (error) {
+        if (shouldFallbackToFirebaseForGangform(error)) {
+            preferredGangformPtwBackend = 'firebase';
+            await saveGangformPtwRecordWithFirebase(buildingId, nextRecord);
+            return;
+        }
+
+        console.error("Gangform PTW record save failed:", error);
+        throw error;
+    }
+};
+
+export const subscribeToGangformPtwData = (callback: (records: GangformPtwStoredMap) => void) => {
+    if (preferredGangformPtwBackend === 'firebase') {
+        return subscribeToGangformPtwDataWithFirebase(callback);
+    }
+
+    let fallbackUnsubscribe = () => {};
+    let closed = false;
+
+    const startFirebaseFallback = (error?: any) => {
+        if (closed || preferredGangformPtwBackend === 'firebase') return;
+        preferredGangformPtwBackend = 'firebase';
+        if (error) {
+            console.warn('Supabase 갱폼 PTW 실시간 동기화를 사용할 수 없어 Firebase로 전환합니다.', error);
+        }
+        fallbackUnsubscribe = subscribeToGangformPtwDataWithFirebase(callback);
+    };
+
+    const channel = supabase
+        .channel('sfcs-gangform-ptw-sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: GANGFORM_PTW_SYNC_TABLE }, async () => {
+            try {
+                const records = await fetchGangformPtwRowsFromSupabase();
+                preferredGangformPtwBackend = 'supabase';
+                callback(records);
+            } catch (error) {
+                if (shouldFallbackToFirebaseForGangform(error)) {
+                    await channel.unsubscribe();
+                    startFirebaseFallback(error);
+                    return;
+                }
+                console.error("Gangform PTW sync error:", error);
+            }
+        })
+        .subscribe(async (status) => {
+            if (status !== 'SUBSCRIBED') return;
+            try {
+                const fetched = await fetchGangformPtwRowsFromSupabase();
+                const records = await backfillSupabaseGangformPtwIfEmpty(fetched);
+                preferredGangformPtwBackend = 'supabase';
+                callback(records);
+            } catch (error) {
+                if (shouldFallbackToFirebaseForGangform(error)) {
+                    await channel.unsubscribe();
+                    startFirebaseFallback(error);
+                    return;
+                }
+                console.error("Gangform PTW initial sync error:", error);
+            }
+        });
+
+    return () => {
+        closed = true;
+        fallbackUnsubscribe();
+        void channel.unsubscribe();
+    };
 };
 
 export const saveApprovalLeadTimeEvent = async (event: Omit<ApprovalLeadTimeEventRecord, 'createdAt'>) => {
