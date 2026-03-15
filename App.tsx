@@ -2387,6 +2387,25 @@ const App: React.FC = () => {
                       setConnectionError(null);
                       addNotification(`[${selectedPtwBuilding.name}] 실수 전환이 취소되어 이전 완료 상태로 복원되었습니다.`, 'info');
                     }}
+                      onUndoComplete={async (payload) => {
+                      const now = new Date().toISOString();
+                      const current = gangformPtwByBuilding[selectedPtwBuilding.id];
+                      const nextRecord = {
+                        payload,
+                        status: 'approved' as ApprovalStatus,
+                        updatedAt: now,
+                        requestedAt: current?.requestedAt || null,
+                        approvedAt: current?.approvedAt || null,
+                        completedAt: null
+                      };
+                      await saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
+                      setGangformPtwByBuilding(prev => ({
+                        ...prev,
+                        [selectedPtwBuilding.id]: nextRecord
+                      }));
+                      setConnectionError(null);
+                      addNotification(`[${selectedPtwBuilding.name}] 인상 완료 상태가 승인 상태로 되돌려졌습니다.`, 'warning');
+                    }}
                       onReject={async () => {
                       const now = new Date().toISOString();
                       const current = gangformPtwByBuilding[selectedPtwBuilding.id];

@@ -54,6 +54,7 @@ interface GangformPTWWorkerProps {
   onComplete?: (payload: GangformPTWPayload) => Promise<void> | void;
   onCycleReset?: (payload: GangformPTWPayload) => Promise<void> | void;
   onRestoreCycle?: (payload: GangformPTWPayload, status: ApprovalStatus) => Promise<void> | void;
+  onUndoComplete?: (payload: GangformPTWPayload) => Promise<void> | void;
 }
 
 interface LocalDraftState {
@@ -201,7 +202,8 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   onSubmit,
   onComplete,
   onCycleReset,
-  onRestoreCycle
+  onRestoreCycle,
+  onUndoComplete
 }) => {
   const [payload, setPayload] = useState<GangformPTWPayload>(normalizeGangformPayload(buildingId, initialData));
   const [status, setStatus] = useState<ApprovalStatus>(initialStatus);
@@ -219,6 +221,17 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   const beforeWorkPhotosRef = useRef<HTMLDivElement | null>(null);
 
   const storageKey = useMemo(() => getLocalStorageKey(buildingId), [buildingId]);
+
+  const runWithTimeout = async <T,>(task: Promise<T> | void, timeoutMessage: string, timeoutMs = 12000): Promise<T | void> => {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const timer = window.setTimeout(() => {
+        window.clearTimeout(timer);
+        reject(new Error(timeoutMessage));
+      }, timeoutMs);
+    });
+
+    return Promise.race([Promise.resolve(task), timeoutPromise]);
+  };
 
   useEffect(() => {
     const localDraft = readLocalDraft(storageKey);
@@ -421,7 +434,10 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       setPayload(nextPayload);
 
       if (!isPracticeMode) {
-        await onPayloadChange?.(nextPayload, status);
+        await runWithTimeout(
+          onPayloadChange?.(nextPayload, status),
+          '서버 저장이 지연되고 있습니다. 네트워크 또는 서버 상태를 확인 후 다시 시도하세요.'
+        );
       }
     } catch (error) {
       // 서버 저장 실패 시 로컬 화면도 이전 상태로 복구해 새로고침 시 되돌아가는 혼선을 방지한다.
@@ -453,7 +469,10 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       setPayload(nextPayload);
 
       if (!isPracticeMode) {
-        await onPayloadChange?.(nextPayload, status);
+        await runWithTimeout(
+          onPayloadChange?.(nextPayload, status),
+          '서버 저장이 지연되고 있습니다. 네트워크 또는 서버 상태를 확인 후 다시 시도하세요.'
+        );
       }
     } catch (error) {
       if (previousPayload) setPayload(previousPayload);
@@ -481,12 +500,12 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       };
 
       if (!isPracticeMode) {
-        await onSubmit?.({
+        await runWithTimeout(onSubmit?.({
           ...payload,
           building: dbPayload.building,
           floor: dbPayload.floor,
           submissionRecord: dbPayload
-        });
+        }), 'PTW 승인요청 저장이 지연되고 있습니다. 잠시 후 다시 시도하세요.');
       }
 
       setStatus('requested');
@@ -507,7 +526,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
         throw new Error('완료 기록 DB 저장 함수가 연결되지 않았습니다.');
       }
       if (!isPracticeMode) {
-        await onComplete?.(payload);
+        await runWithTimeout(onComplete?.(payload), '인상 완료 저장이 지연되고 있습니다. 잠시 후 다시 시도하세요.');
       }
       setStatus('completed');
     } catch (error) {
@@ -544,7 +563,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
 
     try {
       if (!isPracticeMode) {
-        await onCycleReset?.(nextPayload);
+        await runWithTimeout(onCycleReset?.(nextPayload), '다음 층 전환 저장이 지연되고 있습니다. 잠시 후 다시 시도하세요.');
       }
     } catch (error) {
       // 저장 실패 시 즉시 이전 완료 상태로 되돌려 로컬/서버 불일치를 막는다.
@@ -565,7 +584,10 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       setUndoStack([]);
 
       if (!isPracticeMode) {
-        await onRestoreCycle?.(cycleUndoSnapshot.payload, cycleUndoSnapshot.status);
+        await runWithTimeout(
+          onRestoreCycle?.(cycleUndoSnapshot.payload, cycleUndoSnapshot.status),
+          '이전 상태 복원 저장이 지연되고 있습니다. 잠시 후 다시 시도하세요.'
+        );
       }
 
       setCycleUndoSnapshot(null);
@@ -585,6 +607,23 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       status
     });
     handleShareMessage(title, text);
+  };
+
+  const undoCompletedStatus = async () => {
+    if (isSubmitting || status !== 'completed') return;
+    if (!window.confirm('인상 완료 상태를 승인 상태로 되돌리시겠습니까?')) return;
+
+    try {
+      setIsSubmitting(true);
+      if (!isPracticeMode) {
+        await runWithTimeout(onUndoComplete?.(payload), '완료 상태 되돌리기 저장이 지연되고 있습니다. 잠시 후 다시 시도하세요.');
+      }
+      setStatus('approved');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '완료 상태 되돌리기 실패');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -824,6 +863,14 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
 
       {status === 'completed' && (
         <div className="space-y-2">
+          <button
+            type="button"
+            onClick={undoCompletedStatus}
+            disabled={isSubmitting}
+            className="w-full py-3 rounded-xl bg-slate-700 text-white font-black text-sm disabled:opacity-40"
+          >
+            인상 완료 되돌리기 (승인 상태로)
+          </button>
           <button
             onClick={prepareNextFloorCycle}
             disabled={isSubmitting}

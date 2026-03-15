@@ -300,6 +300,23 @@ const GangformPTWPage: React.FC = () => {
               [selectedBuilding.id]: nextRecord
             }));
             }}
+            onUndoComplete={async (payload) => {
+            const now = new Date().toISOString();
+            const current = gangformPtwByBuilding[selectedBuilding.id];
+            const nextRecord = {
+              payload,
+              status: 'approved' as ApprovalStatus,
+              updatedAt: now,
+              requestedAt: current?.requestedAt || null,
+              approvedAt: current?.approvedAt || null,
+              completedAt: null
+            };
+            await saveGangformPtwRecord(selectedBuilding.id, nextRecord);
+            setGangformPtwByBuilding((prev) => ({
+              ...prev,
+              [selectedBuilding.id]: nextRecord
+            }));
+            }}
             onSubmit={async (payload) => {
             const requestedAt = new Date().toISOString();
             const nextRecord = {
