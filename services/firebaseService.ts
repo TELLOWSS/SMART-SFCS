@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase/app';
-import { collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, query, orderBy, limit, initializeFirestore, persistentLocalCache, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, getDocsFromServer, query, orderBy, limit, initializeFirestore, memoryLocalCache, deleteDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Building, ChatMessage, AnalysisResult } from '../types';
 
@@ -41,7 +41,6 @@ export interface GangformPtwForceEditEventRecord {
 // [설정 완료] 사용자가 제공한 Firebase 키 적용됨
 // 이 설정값은 프로젝트 식별용이며, 실제 보안은 Firebase Console의 보안 규칙(Rules)으로 관리됩니다.
 // ==================================================================================
-const FIRESTORE_CACHE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 const firebaseConfig = {
   apiKey: "AIzaSyA9Rx7DCFoxJWPU7zMav8NWtR71YJOHbJI",
@@ -61,15 +60,13 @@ try {
         const app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         
-        // [Fix] 캐시 크기를 제한하여 오래된 캐시 데이터가 과도하게 쌓이는 것을 방지한다.
-        // CACHE_SIZE_UNLIMITED 사용 시 기기마다 서로 다른 오래된 캐시 상태가 유지되어
-        // 양생완료 등의 상태가 기기마다 다르게 보이는 문제가 발생할 수 있다.
-        // [Fix2] Firebase 9.6+ 권장 방식인 persistentLocalCache를 사용하여
-        // 기존의 deprecated enableIndexedDbPersistence 호출을 제거한다.
+        // [Fix] persistentLocalCache(IndexedDB)에서 memoryLocalCache로 변경.
+        // IndexedDB 기반 오프라인 캐시는 기기마다 서로 다른 오래된 상태(예: 미착수)가 유지되어
+        // 다른 기기에서 변경한 상태(예: 설치중)를 실시간으로 수신해도 갱신되지 않는 문제를 일으켰다.
+        // memoryLocalCache를 사용하면 앱 시작 시 항상 서버에서 최신 데이터를 가져오므로
+        // 기기 간 실시간 상태 동기화가 정확하게 동작한다.
         db = initializeFirestore(app, {
-            localCache: persistentLocalCache({
-                cacheSizeBytes: FIRESTORE_CACHE_SIZE_BYTES
-            })
+            localCache: memoryLocalCache()
         });
 
         signInAnonymously(auth).then(() => {
@@ -100,7 +97,11 @@ export const syncBuildings = (
 
     const q = collection(db, "buildings");
     
-    const unsubscribe = onSnapshot(q, { includeMetadataChanges: true },
+    // [Fix] includeMetadataChanges: true 제거.
+    // memoryLocalCache 환경에서는 fromCache:true 이벤트가 발생하지 않으므로
+    // 메타데이터 변경 이벤트를 별도로 구독할 필요가 없다.
+    // 실제 데이터 변경 시에만 콜백이 호출되어 불필요한 재렌더링을 방지한다.
+    const unsubscribe = onSnapshot(q,
         (snapshot) => {
             const buildings: Building[] = [];
             const isLive = !snapshot.metadata.fromCache;
@@ -126,7 +127,9 @@ export const initializeDataIfEmpty = async (initialBuildings: Building[]) => {
     try {
         if (!auth.currentUser) await new Promise(resolve => setTimeout(resolve, 1500));
         const q = collection(db, "buildings");
-        const snapshot = await getDocs(q);
+        // [Fix] getDocs → getDocsFromServer: 캐시가 아닌 실제 서버 상태를 확인하여
+        // 이미 데이터가 있는 경우 초기값으로 덮어쓰는 문제를 방지한다.
+        const snapshot = await getDocsFromServer(q);
         if (snapshot.empty) {
             const batch = writeBatch(db);
             initialBuildings.forEach((b) => {
@@ -252,8 +255,10 @@ export const saveGangformPtwData = async (ptwByBuilding: GangformPtwStoredMap) =
 export const subscribeToGangformPtwData = (callback: (records: GangformPtwStoredMap) => void) => {
     if (!db) return () => {};
 
-    const unsubscribe = onSnapshot(doc(db, "site_data", "gangform_ptw"), { includeMetadataChanges: true }, (snapshot) => {
-        if (snapshot.metadata.fromCache) return; // 캐시 데이터는 무시하고 서버 확정 데이터만 처리
+    // [Fix] includeMetadataChanges: true 및 fromCache 필터 제거.
+    // memoryLocalCache 환경에서는 fromCache:true 이벤트가 발생하지 않으므로
+    // 메타데이터 기반 필터링 없이 모든 스냅샷 이벤트를 처리한다.
+    const unsubscribe = onSnapshot(doc(db, "site_data", "gangform_ptw"), (snapshot) => {
         if (!snapshot.exists()) {
             callback({});
             return;

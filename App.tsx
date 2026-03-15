@@ -538,22 +538,49 @@ const App: React.FC = () => {
     // 2. 서버 데이터 구독 및 에러 핸들링
     const unsubscribe = syncBuildings(
         (serverBuildings, isLive) => {
+            // [Fix] memoryLocalCache 환경에서는 항상 서버 데이터를 받으므로 isLive는 true.
+            // 연결 성공 시 isConnected를 true로 설정하고 에러를 초기화한다.
             setIsConnected(isLive);
-            setConnectionError(null); // 성공 시 에러 초기화
+            setConnectionError(null);
             
             if (serverBuildings.length > 0) {
               const normalizedBuildings = normalizeBuildingsWithDrawingData(serverBuildings);
 
-              // [Fix] 캐시 데이터(isLive=false)로 Firebase를 덮어쓰면 기기마다 서로 다른 양생완료 상태가 생기는 문제 발생
-              // 반드시 실시간 서버 데이터(isLive=true)일 때만 정규화된 데이터를 Firebase에 재저장한다.
-              // [Fix2] normalizedOnceRef 를 통해 세션당 최대 1회만 재저장한다.
-              // 여러 기기가 동시에 스냅샷을 받아 모두 saveAllBuildings를 호출하면
-              // 마지막 쓰기가 이기는(last-write-wins) 방식으로 다른 기기의 최신 상태 변경이 손실될 수 있다.
-              if (isLive && !normalizedOnceRef.current && JSON.stringify(normalizedBuildings) !== JSON.stringify(serverBuildings)) {
+              // [Fix] saveAllBuildings 경쟁 조건(Race Condition) 제거.
+              // 기존에는 정규화된 데이터를 Firebase에 재저장할 때 여러 기기가 동시에 스냅샷을 받으면
+              // 모두 saveAllBuildings를 호출하여 마지막 기기의 쓰기가 이기는 방식으로
+              // 다른 기기에서 막 변경한 상태(예: 설치중)가 초기값(미착수)으로 덮어씌워지는 문제가 있었다.
+              // 이제 정규화 재저장은 initializeDataIfEmpty에서 한 번만 처리한다.
+              if (!normalizedOnceRef.current && JSON.stringify(normalizedBuildings) !== JSON.stringify(serverBuildings)) {
                 normalizedOnceRef.current = true;
-                saveAllBuildings(normalizedBuildings).catch((e) => {
-                  console.error('도면 정규화 데이터 재저장 실패:', e);
+                // 단위 세대 구조 변경(BUILDING_DATA 업데이트)이 있을 때만 저장하되,
+                // 최초 1회 저장 이후에는 절대 전체 덮어쓰기를 하지 않는다.
+                // 각 건물의 개별 saveBuilding을 사용해 충돌을 최소화한다.
+                const serverBuildingMap = new Map(serverBuildings.map(sb => [sb.id, sb]));
+                const structureChangedBuildings = normalizedBuildings.filter((nb) => {
+                  const sb = serverBuildingMap.get(nb.id);
+                  if (!sb) return true;
+                  // 상태(status/mepCompleted)가 아닌 구조(floors 길이, units 길이, isDeadUnit)만 비교
+                  const structureEqual = nb.floors.length === sb.floors.length &&
+                    nb.floors.every((nf) => {
+                      const sf = sb.floors.find(f => f.level === nf.level);
+                      return sf && nf.units.length === sf.units.length &&
+                        nf.units.every((nu) => {
+                          const su = sf.units.find(u => u.id === nu.id || u.unitNumber === nu.unitNumber);
+                          return su && nu.isDeadUnit === su.isDeadUnit;
+                        });
+                    });
+                  return !structureEqual;
                 });
+                if (structureChangedBuildings.length > 0) {
+                  Promise.allSettled(structureChangedBuildings.map(b => saveBuilding(b))).then(results => {
+                    results.forEach((result, idx) => {
+                      if (result.status === 'rejected') {
+                        console.error(`도면 정규화 데이터 재저장 실패 (${structureChangedBuildings[idx]?.name}):`, result.reason);
+                      }
+                    });
+                  });
+                }
               }
 
                 // [핵심 Fix] 알림 처리 중 에러가 발생해도 화면 갱신(setBuildings)이 누락되지 않도록 방어 코드 추가
@@ -711,6 +738,22 @@ const App: React.FC = () => {
     const handleScroll = () => setShowScrollTop(window.scrollY > 400);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // [Fix] 모바일 브라우저 백그라운드 복귀 시 Firebase 연결 복구 처리.
+  // 모바일 기기는 앱이 백그라운드로 전환될 때 WebSocket 연결을 끊는 경우가 있어
+  // 포그라운드로 돌아왔을 때 실시간 업데이트를 받지 못하는 문제가 발생한다.
+  // visibilitychange 이벤트로 복귀를 감지하고 연결 상태를 초기화하여 재연결을 유도한다.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // 페이지가 다시 보일 때 연결 상태를 체크 중으로 표시
+        // Firebase onSnapshot은 자동으로 재연결하므로, 다음 스냅샷 이벤트에서 isConnected가 갱신된다.
+        setConnectionError(null);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
   useEffect(() => {
