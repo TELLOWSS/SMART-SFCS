@@ -266,106 +266,89 @@ const GangformPTWPage: React.FC = () => {
             initialStatus={gangformPtwByBuilding[selectedBuilding.id]?.status || 'draft'}
             remoteUpdatedAt={gangformPtwByBuilding[selectedBuilding.id]?.updatedAt || null}
             focusFloorSignal={ptwFocusSignal}
-            onPayloadChange={(payload, workerStatus) => {
+            onPayloadChange={async (payload, workerStatus) => {
             const now = new Date().toISOString();
-            setGangformPtwByBuilding((prev) => {
-              const current = prev[selectedBuilding.id];
-              const nextRecord = {
-                payload,
-                status: workerStatus || current?.status || 'draft',
-                updatedAt: now,
-                requestedAt: current?.requestedAt || null,
-                approvedAt: current?.approvedAt || null,
-                completedAt: current?.completedAt || null
-              };
-              const next = {
-                ...prev,
-                [selectedBuilding.id]: nextRecord
-              };
-              void saveGangformPtwRecord(selectedBuilding.id, nextRecord);
-              return next;
-            });
+            const current = gangformPtwByBuilding[selectedBuilding.id];
+            const nextRecord = {
+              payload,
+              status: workerStatus || current?.status || 'draft',
+              updatedAt: now,
+              requestedAt: current?.requestedAt || null,
+              approvedAt: current?.approvedAt || null,
+              completedAt: current?.completedAt || null
+            };
+            await saveGangformPtwRecord(selectedBuilding.id, nextRecord);
+            setGangformPtwByBuilding((prev) => ({
+              ...prev,
+              [selectedBuilding.id]: nextRecord
+            }));
             }}
-            onRestoreCycle={(payload, restoredStatus) => {
+            onRestoreCycle={async (payload, restoredStatus) => {
             const now = new Date().toISOString();
-            setGangformPtwByBuilding((prev) => {
-              const current = prev[selectedBuilding.id];
-              const nextRecord = {
-                payload,
-                status: restoredStatus,
-                updatedAt: now,
-                requestedAt: current?.requestedAt || null,
-                approvedAt: current?.approvedAt || null,
-                completedAt: restoredStatus === 'completed' ? (current?.completedAt || now) : current?.completedAt || null
-              };
-              const next = {
-                ...prev,
-                [selectedBuilding.id]: nextRecord
-              };
-              void saveGangformPtwRecord(selectedBuilding.id, nextRecord);
-              return next;
-            });
+            const current = gangformPtwByBuilding[selectedBuilding.id];
+            const nextRecord = {
+              payload,
+              status: restoredStatus,
+              updatedAt: now,
+              requestedAt: current?.requestedAt || null,
+              approvedAt: current?.approvedAt || null,
+              completedAt: restoredStatus === 'completed' ? (current?.completedAt || now) : current?.completedAt || null
+            };
+            await saveGangformPtwRecord(selectedBuilding.id, nextRecord);
+            setGangformPtwByBuilding((prev) => ({
+              ...prev,
+              [selectedBuilding.id]: nextRecord
+            }));
             }}
-            onSubmit={(payload) => {
+            onSubmit={async (payload) => {
             const requestedAt = new Date().toISOString();
-            setGangformPtwByBuilding((prev) => {
-              const nextRecord = {
-                payload,
-                status: 'requested' as ApprovalStatus,
-                updatedAt: requestedAt,
-                requestedAt,
-                approvedAt: null,
-                completedAt: null
-              };
-              const next = {
-                ...prev,
-                [selectedBuilding.id]: nextRecord
-              };
-              void saveGangformPtwRecord(selectedBuilding.id, nextRecord);
-              return next;
-            });
+            const nextRecord = {
+              payload,
+              status: 'requested' as ApprovalStatus,
+              updatedAt: requestedAt,
+              requestedAt,
+              approvedAt: null,
+              completedAt: null
+            };
+            await saveGangformPtwRecord(selectedBuilding.id, nextRecord);
+            setGangformPtwByBuilding((prev) => ({
+              ...prev,
+              [selectedBuilding.id]: nextRecord
+            }));
             }}
-            onComplete={(payload) => {
-            return insertGangformPtwCompletedRecord(payload).then(() => {
-              setGangformPtwByBuilding((prev) => {
-                const completedAt = new Date().toISOString();
-                const current = prev[selectedBuilding.id];
-                const nextRecord = {
-                  payload,
-                  status: 'completed' as ApprovalStatus,
-                  updatedAt: completedAt,
-                  requestedAt: current?.requestedAt || null,
-                  approvedAt: current?.approvedAt || null,
-                  completedAt
-                };
-                const next = {
-                  ...prev,
-                  [selectedBuilding.id]: nextRecord
-                };
-
-                void saveGangformPtwRecord(selectedBuilding.id, nextRecord);
-                return next;
-              });
-            });
+            onComplete={async (payload) => {
+            await insertGangformPtwCompletedRecord(payload);
+            const completedAt = new Date().toISOString();
+            const current = gangformPtwByBuilding[selectedBuilding.id];
+            const nextRecord = {
+              payload,
+              status: 'completed' as ApprovalStatus,
+              updatedAt: completedAt,
+              requestedAt: current?.requestedAt || null,
+              approvedAt: current?.approvedAt || null,
+              completedAt
+            };
+            await saveGangformPtwRecord(selectedBuilding.id, nextRecord);
+            setGangformPtwByBuilding((prev) => ({
+              ...prev,
+              [selectedBuilding.id]: nextRecord
+            }));
             }}
-            onCycleReset={(payload) => {
+            onCycleReset={async (payload) => {
             const now = new Date().toISOString();
-            setGangformPtwByBuilding((prev) => {
-              const nextRecord = {
-                payload,
-                status: 'draft' as ApprovalStatus,
-                updatedAt: now,
-                requestedAt: null,
-                approvedAt: null,
-                completedAt: null
-              };
-              const next = {
-                ...prev,
-                [selectedBuilding.id]: nextRecord
-              };
-              void saveGangformPtwRecord(selectedBuilding.id, nextRecord);
-              return next;
-            });
+            const nextRecord = {
+              payload,
+              status: 'draft' as ApprovalStatus,
+              updatedAt: now,
+              requestedAt: null,
+              approvedAt: null,
+              completedAt: null
+            };
+            await saveGangformPtwRecord(selectedBuilding.id, nextRecord);
+            setGangformPtwByBuilding((prev) => ({
+              ...prev,
+              [selectedBuilding.id]: nextRecord
+            }));
             }}
           />
         </div>

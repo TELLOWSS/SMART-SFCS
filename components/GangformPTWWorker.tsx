@@ -489,6 +489,8 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       }
 
       setStatus('requested');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'PTW 승인요청 저장 실패');
     } finally {
       setIsSubmitting(false);
     }
@@ -539,8 +541,16 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     setPayload(nextPayload);
     setStatus('draft');
 
-    if (!isPracticeMode) {
-      await onCycleReset?.(nextPayload);
+    try {
+      if (!isPracticeMode) {
+        await onCycleReset?.(nextPayload);
+      }
+    } catch (error) {
+      // 저장 실패 시 즉시 이전 완료 상태로 되돌려 로컬/서버 불일치를 막는다.
+      setPayload(previousSnapshot.payload);
+      setStatus(previousSnapshot.status);
+      setCycleUndoSnapshot(null);
+      alert(error instanceof Error ? error.message : '다음 층 전환 저장 실패');
     }
   };
 

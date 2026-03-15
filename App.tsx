@@ -2254,165 +2254,156 @@ const App: React.FC = () => {
                       initialStatus={gangformPtwByBuilding[selectedPtwBuilding.id]?.status || 'draft'}
                       remoteUpdatedAt={gangformPtwByBuilding[selectedPtwBuilding.id]?.updatedAt || null}
                       focusFloorSignal={ptwFocusSignal}
-                      onPayloadChange={(payload, workerStatus) => {
+                      onPayloadChange={async (payload, workerStatus) => {
                       const now = new Date().toISOString();
-                      setGangformPtwByBuilding(prev => {
-                        const current = prev[selectedPtwBuilding.id];
-                        const nextRecord = {
-                          payload,
-                          status: workerStatus || current?.status || 'draft',
-                          updatedAt: now,
-                          requestedAt: current?.requestedAt || null,
-                          approvedAt: current?.approvedAt || null,
-                          completedAt: current?.completedAt || null
-                        };
-                        const next = {
+                      const current = gangformPtwByBuilding[selectedPtwBuilding.id];
+                      const nextRecord = {
+                        payload,
+                        status: workerStatus || current?.status || 'draft',
+                        updatedAt: now,
+                        requestedAt: current?.requestedAt || null,
+                        approvedAt: current?.approvedAt || null,
+                        completedAt: current?.completedAt || null
+                      };
+                      try {
+                        await saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
+                        setGangformPtwByBuilding(prev => ({
                           ...prev,
                           [selectedPtwBuilding.id]: nextRecord
-                        };
-                        void saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
-                        return next;
-                      });
+                        }));
+                        setConnectionError(null);
+                      } catch (error: any) {
+                        const message = error?.message || '갱폼 PTW 저장 실패';
+                        setConnectionError(message);
+                        throw error;
+                      }
                     }}
-                      onSubmit={(payload) => {
+                      onSubmit={async (payload) => {
                       const requestedAt = new Date().toISOString();
                       const beforePhotos = Object.values(payload.requiredPhotos.beforeWork).filter(Boolean).length;
+                      const nextRecord = {
+                        payload,
+                        status: 'requested' as ApprovalStatus,
+                        updatedAt: requestedAt,
+                        requestedAt,
+                        approvedAt: null,
+                        completedAt: null
+                      };
+                      await saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
+                      setGangformPtwByBuilding(prev => ({
+                        ...prev,
+                        [selectedPtwBuilding.id]: nextRecord
+                      }));
+                      setConnectionError(null);
                       addNotification(`[${selectedPtwBuilding.name}] PTW 승인요청 전송 (${beforePhotos}/5장 URL 포함)`, 'info');
-                      setGangformPtwByBuilding(prev => {
-                        const nextRecord = {
-                          payload,
-                          status: 'requested' as ApprovalStatus,
-                          updatedAt: requestedAt,
-                          requestedAt,
-                          approvedAt: null,
-                          completedAt: null
-                        };
-                        const next = {
-                          ...prev,
-                          [selectedPtwBuilding.id]: nextRecord
-                        };
-                        void saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
-                        return next;
-                      });
                     }}
-                      onApprove={() => {
+                      onApprove={async () => {
                       const approvedAt = new Date().toISOString();
+                      const current = gangformPtwByBuilding[selectedPtwBuilding.id];
+                      if (!current) return;
+                      const nextRecord = {
+                        ...current,
+                        status: 'approved' as ApprovalStatus,
+                        updatedAt: approvedAt,
+                        approvedAt
+                      };
+                      await saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
+                      setGangformPtwByBuilding(prev => ({
+                        ...prev,
+                        [selectedPtwBuilding.id]: nextRecord
+                      }));
+                      setConnectionError(null);
                       addNotification(`[${selectedPtwBuilding.name}] 안전 작업 허가(PTW)가 발급되었습니다.`, 'success');
-                      setGangformPtwByBuilding(prev => {
-                        const current = prev[selectedPtwBuilding.id];
-                        if (!current) return prev;
 
-                        const requestedAt = current.requestedAt || null;
-                        if (requestedAt) {
-                          const leadMinutes = Math.max(0, Math.round((new Date(approvedAt).getTime() - new Date(requestedAt).getTime()) / 60000));
-                          if (Number.isFinite(leadMinutes)) {
-                            saveApprovalLeadTimeEvent({
-                              approvedAt,
-                              leadMinutes,
-                              buildingId: selectedPtwBuilding.id,
-                              buildingName: selectedPtwBuilding.name,
-                              floor: current.payload?.floor || '-'
-                            });
-                          }
+                      const requestedAt = current.requestedAt || null;
+                      if (requestedAt) {
+                        const leadMinutes = Math.max(0, Math.round((new Date(approvedAt).getTime() - new Date(requestedAt).getTime()) / 60000));
+                        if (Number.isFinite(leadMinutes)) {
+                          saveApprovalLeadTimeEvent({
+                            approvedAt,
+                            leadMinutes,
+                            buildingId: selectedPtwBuilding.id,
+                            buildingName: selectedPtwBuilding.name,
+                            floor: current.payload?.floor || '-'
+                          });
                         }
-
-                        const next = {
-                          ...prev,
-                          [selectedPtwBuilding.id]: {
-                            ...current,
-                            status: 'approved',
-                            updatedAt: approvedAt,
-                            approvedAt
-                          }
-                        };
-                        void saveGangformPtwRecord(selectedPtwBuilding.id, next[selectedPtwBuilding.id]);
-                        return next;
-                      });
+                      }
                     }}
-                      onComplete={(payload) => {
-                      return insertGangformPtwCompletedRecord(payload).then(() => {
-                        addNotification(`[${selectedPtwBuilding.name} ${payload.floor}] PTW 작업이 완료되었습니다.`, 'success');
-                        setPtwHistoryRefreshTick(prev => prev + 1);
-                        setGangformPtwByBuilding(prev => {
-                          const completedAt = new Date().toISOString();
-                          const current = prev[selectedPtwBuilding.id];
-                          const nextRecord = {
-                            payload,
-                            status: 'completed' as ApprovalStatus,
-                            updatedAt: completedAt,
-                            requestedAt: current?.requestedAt || null,
-                            approvedAt: current?.approvedAt || null,
-                            completedAt
-                          };
-                          const next = {
-                            ...prev,
-                            [selectedPtwBuilding.id]: nextRecord
-                          };
-
-                          void saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
-                          return next;
-                        });
-                      });
+                      onComplete={async (payload) => {
+                      await insertGangformPtwCompletedRecord(payload);
+                      const completedAt = new Date().toISOString();
+                      const current = gangformPtwByBuilding[selectedPtwBuilding.id];
+                      const nextRecord = {
+                        payload,
+                        status: 'completed' as ApprovalStatus,
+                        updatedAt: completedAt,
+                        requestedAt: current?.requestedAt || null,
+                        approvedAt: current?.approvedAt || null,
+                        completedAt
+                      };
+                      await saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
+                      setGangformPtwByBuilding(prev => ({
+                        ...prev,
+                        [selectedPtwBuilding.id]: nextRecord
+                      }));
+                      setConnectionError(null);
+                      addNotification(`[${selectedPtwBuilding.name} ${payload.floor}] PTW 작업이 완료되었습니다.`, 'success');
+                      setPtwHistoryRefreshTick(prev => prev + 1);
                     }}
-                      onCycleReset={(payload) => {
+                      onCycleReset={async (payload) => {
                       const now = new Date().toISOString();
+                      const nextRecord = {
+                        payload,
+                        status: 'draft' as ApprovalStatus,
+                        updatedAt: now,
+                        requestedAt: null,
+                        approvedAt: null,
+                        completedAt: null
+                      };
+                      await saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
+                      setGangformPtwByBuilding(prev => ({
+                        ...prev,
+                        [selectedPtwBuilding.id]: nextRecord
+                      }));
+                      setConnectionError(null);
                       addNotification(`[${selectedPtwBuilding.name}] ${payload.floor} 인상 준비 사이클을 시작했습니다.`, 'info');
-                      setGangformPtwByBuilding(prev => {
-                        const nextRecord = {
-                          payload,
-                          status: 'draft' as ApprovalStatus,
-                          updatedAt: now,
-                          requestedAt: null,
-                          approvedAt: null,
-                          completedAt: null
-                        };
-                        const next = {
-                          ...prev,
-                          [selectedPtwBuilding.id]: nextRecord
-                        };
-                        void saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
-                        return next;
-                      });
                     }}
-                      onRestoreCycle={(payload, restoredStatus) => {
+                      onRestoreCycle={async (payload, restoredStatus) => {
                       const now = new Date().toISOString();
+                      const current = gangformPtwByBuilding[selectedPtwBuilding.id];
+                      const nextRecord = {
+                        payload,
+                        status: restoredStatus,
+                        updatedAt: now,
+                        requestedAt: current?.requestedAt || null,
+                        approvedAt: current?.approvedAt || null,
+                        completedAt: restoredStatus === 'completed' ? (current?.completedAt || now) : current?.completedAt || null
+                      };
+                      await saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
+                      setGangformPtwByBuilding(prev => ({
+                        ...prev,
+                        [selectedPtwBuilding.id]: nextRecord
+                      }));
+                      setConnectionError(null);
                       addNotification(`[${selectedPtwBuilding.name}] 실수 전환이 취소되어 이전 완료 상태로 복원되었습니다.`, 'info');
-                      setGangformPtwByBuilding(prev => {
-                        const current = prev[selectedPtwBuilding.id];
-                        const nextRecord = {
-                          payload,
-                          status: restoredStatus,
-                          updatedAt: now,
-                          requestedAt: current?.requestedAt || null,
-                          approvedAt: current?.approvedAt || null,
-                          completedAt: restoredStatus === 'completed' ? (current?.completedAt || now) : current?.completedAt || null
-                        };
-                        const next = {
-                          ...prev,
-                          [selectedPtwBuilding.id]: nextRecord
-                        };
-                        void saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
-                        return next;
-                      });
                     }}
-                      onReject={() => {
+                      onReject={async () => {
                       const now = new Date().toISOString();
+                      const current = gangformPtwByBuilding[selectedPtwBuilding.id];
+                      if (!current) return;
+                      const nextRecord = {
+                        ...current,
+                        status: 'rejected' as ApprovalStatus,
+                        updatedAt: now,
+                        approvedAt: null
+                      };
+                      await saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
+                      setGangformPtwByBuilding(prev => ({
+                        ...prev,
+                        [selectedPtwBuilding.id]: nextRecord
+                      }));
+                      setConnectionError(null);
                       addNotification(`[${selectedPtwBuilding.name}] PTW가 반려되었습니다.`, 'warning');
-                      setGangformPtwByBuilding(prev => {
-                        const current = prev[selectedPtwBuilding.id];
-                        if (!current) return prev;
-                        const next = {
-                          ...prev,
-                          [selectedPtwBuilding.id]: {
-                            ...current,
-                            status: 'rejected',
-                            updatedAt: now,
-                            approvedAt: null
-                          }
-                        };
-                        void saveGangformPtwRecord(selectedPtwBuilding.id, next[selectedPtwBuilding.id]);
-                        return next;
-                      });
                       }}
                       onForceStatusChange={(nextStatus, reason) => {
                       const now = new Date().toISOString();

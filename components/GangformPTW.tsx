@@ -62,6 +62,8 @@ const GangformPTWAdmin: React.FC<GangformPTWAdminProps> = ({
       setIsSubmitting(true);
       await onApprove?.();
       setStatus('approved');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'PTW 승인 처리 실패');
     } finally {
       setIsSubmitting(false);
     }
@@ -73,6 +75,8 @@ const GangformPTWAdmin: React.FC<GangformPTWAdminProps> = ({
       setIsSubmitting(true);
       await onReject?.();
       setStatus('rejected');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'PTW 반려 처리 실패');
     } finally {
       setIsSubmitting(false);
     }
