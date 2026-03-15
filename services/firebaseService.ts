@@ -2,6 +2,7 @@
 import { initializeApp } from 'firebase/app';
 import { collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, getDocsFromServer, query, orderBy, limit, initializeFirestore, memoryLocalCache, deleteDoc, updateDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { supabase } from '../lib/supabaseClient';
 import { Building, ChatMessage, AnalysisResult } from '../types';
 
 type GangformPtwStatus = 'draft' | 'requested' | 'approved' | 'completed' | 'rejected';
@@ -54,6 +55,169 @@ const firebaseConfig = {
 let db: any = null;
 let auth: any = null;
 let isRealDbConnected = false;
+const FIREBASE_WRITE_BLOCK_MS = 5 * 60 * 1000;
+let blockedWriteError: { code: string; message: string; until: number } | null = null;
+
+const createFirebaseWriteError = (code: string, message: string) => {
+    const error = new Error(message) as Error & { code: string };
+    error.code = code;
+    return error;
+};
+
+const ensureFirebaseWritable = () => {
+    if (!blockedWriteError) return;
+    if (blockedWriteError.until <= Date.now()) {
+        blockedWriteError = null;
+        return;
+    }
+
+    throw createFirebaseWriteError(blockedWriteError.code, blockedWriteError.message);
+};
+
+const rememberWriteFailure = (error: any) => {
+    if (error?.code === 'resource-exhausted') {
+        blockedWriteError = {
+            code: 'resource-exhausted',
+            message: 'Firebase 쓰기 한도를 초과했습니다. 추가 쓰기를 5분간 중단합니다.',
+            until: Date.now() + FIREBASE_WRITE_BLOCK_MS
+        };
+    }
+};
+
+const runFirebaseWrite = async <T>(operation: () => Promise<T>): Promise<T> => {
+    ensureFirebaseWritable();
+
+    try {
+        const result = await operation();
+        blockedWriteError = null;
+        return result;
+    } catch (error) {
+        rememberWriteFailure(error);
+        throw error;
+    }
+};
+
+const BUILDINGS_SYNC_TABLE = 'sfcs_buildings';
+let preferredBuildingsBackend: 'unknown' | 'firebase' | 'supabase' = 'unknown';
+
+const sortBuildingsById = (buildings: Building[]) => {
+    if (buildings.length > 0) {
+        buildings.sort((a, b) => a.id.localeCompare(b.id));
+    }
+    return buildings;
+};
+
+const toSupabaseBuildingRow = (building: Building) => ({
+    id: building.id,
+    name: building.name,
+    total_floors: building.totalFloors,
+    floors: building.floors,
+    updated_at: new Date().toISOString()
+});
+
+const fromSupabaseBuildingRow = (row: any): Building => ({
+    id: String(row.id),
+    name: row.name,
+    totalFloors: Number(row.total_floors ?? row.totalFloors ?? 0),
+    floors: Array.isArray(row.floors) ? row.floors : []
+});
+
+const shouldFallbackToFirebase = (error: any) => {
+    const message = String(error?.message || '').toLowerCase();
+    return error?.code === 'PGRST205'
+        || error?.code === '42P01'
+        || message.includes('could not find the table')
+        || message.includes('relation')
+        || message.includes(BUILDINGS_SYNC_TABLE);
+};
+
+const fetchSupabaseBuildings = async (): Promise<Building[]> => {
+    const { data, error } = await supabase
+        .from(BUILDINGS_SYNC_TABLE)
+        .select('id, name, total_floors, floors')
+        .order('id', { ascending: true });
+
+    if (error) throw error;
+    return sortBuildingsById((data || []).map(fromSupabaseBuildingRow));
+};
+
+const upsertSupabaseBuildings = async (buildings: Building[]) => {
+    const { error } = await supabase
+        .from(BUILDINGS_SYNC_TABLE)
+        .upsert(buildings.map(toSupabaseBuildingRow), { onConflict: 'id' });
+
+    if (error) throw error;
+};
+
+const syncBuildingsWithFirebase = (
+    onUpdate: (data: Building[], isLive: boolean) => void,
+    onError?: (error: any) => void
+) => {
+    if (!db) return () => {};
+
+    const q = collection(db, 'buildings');
+    const unsubscribe = onSnapshot(q,
+        (snapshot) => {
+            const buildings: Building[] = [];
+            const isLive = !snapshot.metadata.fromCache;
+            snapshot.forEach((doc) => {
+                buildings.push(doc.data() as Building);
+            });
+            onUpdate(sortBuildingsById(buildings), isLive);
+        },
+        (error) => {
+            console.error('🔴 실시간 동기화 끊김:', error.code);
+            if (onError) onError(error);
+        }
+    );
+    return unsubscribe;
+};
+
+const initializeDataIfEmptyWithFirebase = async (initialBuildings: Building[]) => {
+    if (!db) return;
+    try {
+        if (!auth.currentUser) await new Promise(resolve => setTimeout(resolve, 1500));
+        const q = collection(db, 'buildings');
+        const snapshot = await getDocsFromServer(q);
+        if (snapshot.empty) {
+            const batch = writeBatch(db);
+            initialBuildings.forEach((b) => {
+                const ref = doc(db, 'buildings', b.id);
+                batch.set(ref, b);
+            });
+            await batch.commit();
+        }
+    } catch (e: any) {
+        console.warn('초기 데이터 확인 건너뜀:', e.code);
+    }
+};
+
+const saveBuildingWithFirebase = async (building: Building) => {
+    if (!db) return;
+    try {
+        await runFirebaseWrite(() => setDoc(doc(db, 'buildings', building.id), building));
+    } catch (e) {
+        console.error('데이터 저장 실패:', e);
+        throw e;
+    }
+};
+
+const saveAllBuildingsWithFirebase = async (buildings: Building[]) => {
+    if (!db) return;
+    try {
+        await runFirebaseWrite(async () => {
+            const batch = writeBatch(db);
+            buildings.forEach((b) => {
+                const ref = doc(db, 'buildings', b.id);
+                batch.set(ref, b);
+            });
+            await batch.commit();
+        });
+    } catch (e) {
+        console.error('Batch update failed:', e);
+        throw e;
+    }
+};
 
 try {
     if (firebaseConfig.apiKey) {
@@ -90,83 +254,131 @@ try {
 
 // 1. 실시간 동기화 (듣기 모드)
 export const syncBuildings = (
-    onUpdate: (data: Building[], isLive: boolean) => void, 
+    onUpdate: (data: Building[], isLive: boolean) => void,
     onError?: (error: any) => void
 ) => {
-    if (!db) return () => {};
+    if (preferredBuildingsBackend === 'firebase') {
+        return syncBuildingsWithFirebase(onUpdate, onError);
+    }
 
-    const q = collection(db, "buildings");
-    
-    // [Fix] includeMetadataChanges: true 제거.
-    // memoryLocalCache 환경에서는 fromCache:true 이벤트가 발생하지 않으므로
-    // 메타데이터 변경 이벤트를 별도로 구독할 필요가 없다.
-    // 실제 데이터 변경 시에만 콜백이 호출되어 불필요한 재렌더링을 방지한다.
-    const unsubscribe = onSnapshot(q,
-        (snapshot) => {
-            const buildings: Building[] = [];
-            const isLive = !snapshot.metadata.fromCache;
-            snapshot.forEach((doc) => {
-                buildings.push(doc.data() as Building);
-            });
-            if (buildings.length > 0) {
-                buildings.sort((a, b) => a.id.localeCompare(b.id));
-            }
-            onUpdate(buildings, isLive);
-        },
-        (error) => {
-            console.error("🔴 실시간 동기화 끊김:", error.code);
-            if (onError) onError(error);
+    let fallbackUnsubscribe = () => {};
+    let closed = false;
+
+    const startFirebaseFallback = (error?: any) => {
+        if (closed || preferredBuildingsBackend === 'firebase') return;
+        preferredBuildingsBackend = 'firebase';
+        if (error) {
+            console.warn('Supabase 건물 실시간 동기화를 사용할 수 없어 Firebase로 전환합니다.', error);
         }
-    );
-    return unsubscribe;
+        fallbackUnsubscribe = syncBuildingsWithFirebase(onUpdate, onError);
+    };
+
+    const channel = supabase
+        .channel('sfcs-buildings-sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: BUILDINGS_SYNC_TABLE }, async () => {
+            try {
+                const buildings = await fetchSupabaseBuildings();
+                preferredBuildingsBackend = 'supabase';
+                onUpdate(buildings, true);
+            } catch (error) {
+                if (shouldFallbackToFirebase(error)) {
+                    await channel.unsubscribe();
+                    startFirebaseFallback(error);
+                    return;
+                }
+                console.error('Supabase buildings sync error:', error);
+                if (onError) onError(error);
+            }
+        })
+        .subscribe(async (status) => {
+            if (status !== 'SUBSCRIBED') return;
+            try {
+                const buildings = await fetchSupabaseBuildings();
+                preferredBuildingsBackend = 'supabase';
+                onUpdate(buildings, true);
+            } catch (error) {
+                if (shouldFallbackToFirebase(error)) {
+                    await channel.unsubscribe();
+                    startFirebaseFallback(error);
+                    return;
+                }
+                console.error('Supabase buildings initial sync error:', error);
+                if (onError) onError(error);
+            }
+        });
+
+    return () => {
+        closed = true;
+        fallbackUnsubscribe();
+        void channel.unsubscribe();
+    };
 };
 
 // 2. 초기 데이터 업로드
 export const initializeDataIfEmpty = async (initialBuildings: Building[]) => {
-    if (!db) return;
+    if (preferredBuildingsBackend === 'firebase') {
+        await initializeDataIfEmptyWithFirebase(initialBuildings);
+        return;
+    }
+
     try {
-        if (!auth.currentUser) await new Promise(resolve => setTimeout(resolve, 1500));
-        const q = collection(db, "buildings");
-        // [Fix] getDocs → getDocsFromServer: 캐시가 아닌 실제 서버 상태를 확인하여
-        // 이미 데이터가 있는 경우 초기값으로 덮어쓰는 문제를 방지한다.
-        const snapshot = await getDocsFromServer(q);
-        if (snapshot.empty) {
-            const batch = writeBatch(db);
-            initialBuildings.forEach((b) => {
-                const ref = doc(db, "buildings", b.id);
-                batch.set(ref, b);
-            });
-            await batch.commit();
+        const { count, error } = await supabase
+            .from(BUILDINGS_SYNC_TABLE)
+            .select('id', { count: 'exact', head: true });
+
+        if (error) throw error;
+        preferredBuildingsBackend = 'supabase';
+
+        if (!count) {
+            await upsertSupabaseBuildings(initialBuildings);
         }
-    } catch (e: any) {
-        console.warn("초기 데이터 확인 건너뜀:", e.code);
+    } catch (error) {
+        if (shouldFallbackToFirebase(error)) {
+            preferredBuildingsBackend = 'firebase';
+            await initializeDataIfEmptyWithFirebase(initialBuildings);
+            return;
+        }
+        throw error;
     }
 };
 
 // 3. 변경 사항 저장
 export const saveBuilding = async (building: Building) => {
-    if (db) {
-        try {
-            await setDoc(doc(db, "buildings", building.id), building);
-        } catch (e) {
-            console.error("데이터 저장 실패:", e);
+    if (preferredBuildingsBackend === 'firebase') {
+        await saveBuildingWithFirebase(building);
+        return;
+    }
+
+    try {
+        await upsertSupabaseBuildings([building]);
+        preferredBuildingsBackend = 'supabase';
+    } catch (error) {
+        if (shouldFallbackToFirebase(error)) {
+            preferredBuildingsBackend = 'firebase';
+            await saveBuildingWithFirebase(building);
+            return;
         }
+        throw error;
     }
 };
 
 // 4. 전체 데이터 일괄 저장
 export const saveAllBuildings = async (buildings: Building[]) => {
-    if (db) {
-        try {
-            const batch = writeBatch(db);
-            buildings.forEach((b) => {
-                const ref = doc(db, "buildings", b.id);
-                batch.set(ref, b);
-            });
-            await batch.commit();
-        } catch (e) {
-            console.error("Batch update failed:", e);
+    if (preferredBuildingsBackend === 'firebase') {
+        await saveAllBuildingsWithFirebase(buildings);
+        return;
+    }
+
+    try {
+        await upsertSupabaseBuildings(buildings);
+        preferredBuildingsBackend = 'supabase';
+    } catch (error) {
+        if (shouldFallbackToFirebase(error)) {
+            preferredBuildingsBackend = 'firebase';
+            await saveAllBuildingsWithFirebase(buildings);
+            return;
         }
+        throw error;
     }
 };
 
@@ -190,9 +402,10 @@ export const subscribeToChat = (callback: (msgs: ChatMessage[]) => void) => {
 export const sendChatMessage = async (msg: Omit<ChatMessage, 'id'>) => {
     if (!db) return;
     try {
-        await addDoc(collection(db, "messages"), msg);
+        await runFirebaseWrite(() => addDoc(collection(db, "messages"), msg));
     } catch (e) {
         console.error("Message send failed:", e);
+        throw e;
     }
 };
 
@@ -202,14 +415,17 @@ export const clearChatMessages = async () => {
     try {
         const q = collection(db, "messages");
         const snapshot = await getDocs(q);
-        const batch = writeBatch(db);
-        snapshot.forEach((doc) => {
-            batch.delete(doc.ref);
+        await runFirebaseWrite(async () => {
+            const batch = writeBatch(db);
+            snapshot.forEach((doc) => {
+                batch.delete(doc.ref);
+            });
+            await batch.commit();
         });
-        await batch.commit();
         console.log("채팅 데이터 초기화 완료");
     } catch (e) {
         console.error("채팅 초기화 실패:", e);
+        throw e;
     }
 };
 
@@ -218,9 +434,10 @@ export const saveAnalysisResult = async (result: AnalysisResult) => {
     if (!db) return;
     try {
         // site_data 컬렉션의 analysis 문서를 덮어씁니다.
-        await setDoc(doc(db, "site_data", "analysis"), result);
+        await runFirebaseWrite(() => setDoc(doc(db, "site_data", "analysis"), result));
     } catch (e) {
         console.error("Analysis save failed:", e);
+        throw e;
     }
 };
 
@@ -243,12 +460,13 @@ export const subscribeToAnalysisResult = (callback: (result: AnalysisResult | nu
 export const saveGangformPtwData = async (ptwByBuilding: GangformPtwStoredMap) => {
     if (!db) return;
     try {
-        await setDoc(doc(db, "site_data", "gangform_ptw"), {
+        await runFirebaseWrite(() => setDoc(doc(db, "site_data", "gangform_ptw"), {
             records: ptwByBuilding,
             updatedAt: new Date().toISOString()
-        });
+        }));
     } catch (e) {
         console.error("Gangform PTW save failed:", e);
+        throw e;
     }
 };
 
@@ -263,22 +481,23 @@ export const saveGangformPtwRecord = async (buildingId: string, record: Gangform
     const ptwRef = doc(db, "site_data", "gangform_ptw");
 
     try {
-        await updateDoc(ptwRef, {
+        await runFirebaseWrite(() => updateDoc(ptwRef, {
             [`records.${buildingId}`]: nextRecord,
             updatedAt: persistedAt
-        });
+        }));
     } catch (error: any) {
         if (error?.code === 'not-found') {
-            await setDoc(ptwRef, {
+            await runFirebaseWrite(() => setDoc(ptwRef, {
                 records: {
                     [buildingId]: nextRecord
                 },
                 updatedAt: persistedAt
-            }, { merge: true });
+            }, { merge: true }));
             return;
         }
 
         console.error("Gangform PTW record save failed:", error);
+        throw error;
     }
 };
 
@@ -307,12 +526,13 @@ export const saveApprovalLeadTimeEvent = async (event: Omit<ApprovalLeadTimeEven
     if (!db) return;
 
     try {
-        await addDoc(collection(db, "ptw_leadtime_events"), {
+        await runFirebaseWrite(() => addDoc(collection(db, "ptw_leadtime_events"), {
             ...event,
             createdAt: new Date().toISOString()
-        });
+        }));
     } catch (e) {
         console.error("Approval lead-time event save failed:", e);
+        throw e;
     }
 };
 
@@ -340,12 +560,13 @@ export const saveGangformPtwForceEditEvent = async (event: Omit<GangformPtwForce
     if (!db) return;
 
     try {
-        await addDoc(collection(db, "ptw_force_edit_events"), {
+        await runFirebaseWrite(() => addDoc(collection(db, "ptw_force_edit_events"), {
             ...event,
             createdAt: new Date().toISOString()
-        });
+        }));
     } catch (e) {
         console.error("PTW force-edit event save failed:", e);
+        throw e;
     }
 };
 

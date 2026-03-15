@@ -280,6 +280,11 @@ const buildRoleCommunicationBundle = (siteName: string, highPriorityItems: Actio
   };
 };
 
+const buildIntegratedRoleCommunicationMessage = (siteName: string, highPriorityItems: ActionItem[]) => {
+  const comm = buildRoleCommunicationBundle(siteName, highPriorityItems);
+  return `${comm.integrated}\n- 관리자 지시: ${comm.admin}\n- 작업자 안내: ${comm.worker}\n- 협력사 요청: ${comm.subcontractor}`;
+};
+
 const getTabFromPath = (pathname: string): 'dashboard' | 'executive' | 'analysis' | 'manual' | 'ptw' => {
   if (pathname === '/gangform-ptw') return 'ptw';
   if (pathname === '/executive') return 'executive';
@@ -851,6 +856,7 @@ const App: React.FC = () => {
       const highPriority = normalizeAnalysisActionItems(result).filter(item => item.priority === 'high');
       if (highPriority.length > 0) {
           const comm = buildRoleCommunicationBundle(result.siteName, highPriority);
+          const integratedMessage = buildIntegratedRoleCommunicationMessage(result.siteName, highPriority);
           setNotifications(prev => [{
             id: Date.now().toString() + Math.random(),
             message: `[긴급 액션] ${highPriority.length}건 - ${comm.summary}`,
@@ -860,32 +866,12 @@ const App: React.FC = () => {
           }, ...prev]);
           notifySystem('SFCS 긴급 실행 항목', `고우선 액션 ${highPriority.length}건이 도출되었습니다.`);
 
-          Promise.all([
-            sendChatMessage({
-              text: comm.admin,
-              userRole: UserRole.ADMIN,
-              timestamp: Date.now(),
-              senderName: 'AI 분석 알림'
-            }),
-            sendChatMessage({
-              text: comm.worker,
-              userRole: UserRole.WORKER,
-              timestamp: Date.now() + 1,
-              senderName: 'AI 분석 알림'
-            }),
-            sendChatMessage({
-              text: comm.subcontractor,
-              userRole: UserRole.SUBCONTRACTOR,
-              timestamp: Date.now() + 2,
-              senderName: 'AI 분석 알림'
-            }),
-            sendChatMessage({
-              text: comm.integrated,
-              userRole: currentUserRole,
-              timestamp: Date.now() + 3,
-              senderName: 'AI 소통 브리핑'
-            })
-          ]).catch((e) => console.error('High priority role communication send failed:', e));
+          sendChatMessage({
+            text: integratedMessage,
+            userRole: currentUserRole,
+            timestamp: Date.now(),
+            senderName: 'AI 소통 브리핑'
+          }).catch((e) => console.error('High priority role communication send failed:', e));
       }
       
       // [신규] Firebase에 분석 결과 저장 (Persistence)
@@ -1041,7 +1027,8 @@ const App: React.FC = () => {
     e.target.value = ''; 
   };
 
-  const handleMepUpdate = (bId: string, floorLevel: number, unitId: string, completed: boolean) => {
+  const handleMepUpdate = async (bId: string, floorLevel: number, unitId: string, completed: boolean) => {
+    const previousBuildings = buildings;
     const newBuildings = buildings.map(b => {
         if (b.id !== bId) return b;
         return {
@@ -1061,10 +1048,21 @@ const App: React.FC = () => {
 
     setBuildings(newBuildings);
     const updatedBuilding = newBuildings.find(b => b.id === bId);
-    if (updatedBuilding) saveBuilding(updatedBuilding);
+    if (updatedBuilding) {
+      try {
+        await saveBuilding(updatedBuilding);
+        setConnectionError(null);
+      } catch (error) {
+        setBuildings(previousBuildings);
+        const message = formatWriteErrorMessage(error);
+        setConnectionError(message);
+        addNotification(message, 'warning');
+      }
+    }
   };
 
   const handleStatusUpdate = async (bId: string, floorLevel: number, unitId: string, newStatus: ProcessStatus) => {
+    const previousBuildings = buildings;
     let targetUnitNumber = "";
     // [Reject Logic] 현재 상태가 승인요청이고, 새로운 상태가 설치중(반려)일 경우 감지
     let isRejection = false;
@@ -1111,7 +1109,17 @@ const App: React.FC = () => {
     // 2. DB 저장
     const updatedBuilding = newBuildings.find(b => b.id === bId);
     if (updatedBuilding) {
-        saveBuilding(updatedBuilding);
+      try {
+        await saveBuilding(updatedBuilding);
+        setConnectionError(null);
+      } catch (error) {
+        setBuildings(previousBuildings);
+        const message = formatWriteErrorMessage(error);
+        setConnectionError(message);
+        addNotification(message, 'warning');
+        setStatusModal(null);
+        return;
+      }
         
         // 3. 메시지 자동 전송 (Await applied)
         if (newStatus === ProcessStatus.APPROVAL_REQ) {
@@ -1169,6 +1177,7 @@ const App: React.FC = () => {
     if (!confirmed) return;
 
     const now = new Date().toISOString();
+    const previousBuildings = buildings;
 
     const newBuildings = buildings.map(b => {
       if (b.id !== bId) return b;
@@ -1204,7 +1213,16 @@ const App: React.FC = () => {
     setBuildings(newBuildings);
     const updatedBuilding = newBuildings.find(b => b.id === bId);
     if (updatedBuilding) {
-      saveBuilding(updatedBuilding);
+      try {
+        await saveBuilding(updatedBuilding);
+        setConnectionError(null);
+      } catch (error) {
+        setBuildings(previousBuildings);
+        const message = formatWriteErrorMessage(error);
+        setConnectionError(message);
+        addNotification(message, 'warning');
+        return;
+      }
     }
 
     addNotification(`[일괄 처리] ${targetBuilding.name} ${floorLevel}층 전체 ${statusLabel} 전환 완료`, 'success');
@@ -1219,6 +1237,19 @@ const App: React.FC = () => {
 
   const addNotification = (msg: string, type: SystemNotification['type']) => {
     setNotifications(prev => [{ id: Date.now().toString(), message: msg, type, timestamp: '방금 전', read: false }, ...prev]);
+  };
+
+  const formatWriteErrorMessage = (error: any) => {
+    if (error?.code === 'resource-exhausted') {
+      return 'Firebase 쓰기 한도를 초과했습니다. 현재 변경은 서버에 저장되지 않아 다른 기기에 반영되지 않습니다. Firebase 사용량 할당량을 확인하거나 요금제를 조정해야 합니다.';
+    }
+    if (error?.code === 'permission-denied') {
+      return 'Firebase 쓰기 권한이 없습니다. Firestore Rules 설정을 확인하세요.';
+    }
+    if (error?.code === 'unavailable') {
+      return 'Firebase 서버에 연결할 수 없어 변경이 저장되지 않았습니다. 네트워크 연결을 확인하세요.';
+    }
+    return `실시간 저장 실패${error?.code ? ` (${error.code})` : ''}: 변경이 서버에 반영되지 않았습니다.`;
   };
 
   useEffect(() => {
@@ -1239,6 +1270,7 @@ const App: React.FC = () => {
     if (highPriority.length === 0) return;
 
     const comm = buildRoleCommunicationBundle(lastAnalysisResult.siteName, highPriority);
+    const integratedMessage = buildIntegratedRoleCommunicationMessage(lastAnalysisResult.siteName, highPriority);
     setNotifications(prev => [{
       id: Date.now().toString() + Math.random(),
       message: `[동기화 긴급] ${highPriority.length}건 - ${comm.summary}`,
@@ -1249,27 +1281,13 @@ const App: React.FC = () => {
 
     notifySystem('SFCS 긴급 항목 동기화', `새 분석 결과에서 긴급 액션 ${highPriority.length}건이 동기화되었습니다.`);
 
-    Promise.all([
-      sendChatMessage({
-        text: comm.admin,
-        userRole: UserRole.ADMIN,
-        timestamp: Date.now(),
-        senderName: 'AI 동기화 알림'
-      }),
-      sendChatMessage({
-        text: comm.worker,
-        userRole: UserRole.WORKER,
-        timestamp: Date.now() + 1,
-        senderName: 'AI 동기화 알림'
-      }),
-      sendChatMessage({
-        text: comm.subcontractor,
-        userRole: UserRole.SUBCONTRACTOR,
-        timestamp: Date.now() + 2,
-        senderName: 'AI 동기화 알림'
-      })
-    ]).catch((e) => console.error('Synced high priority role communication send failed:', e));
-  }, [lastAnalysisResult]);
+    sendChatMessage({
+      text: integratedMessage,
+      userRole: currentUserRole,
+      timestamp: Date.now(),
+      senderName: 'AI 동기화 알림'
+    }).catch((e) => console.error('Synced high priority role communication send failed:', e));
+  }, [currentUserRole, lastAnalysisResult]);
 
   const pendingApprovals = useMemo(() => {
     const list: any[] = [];
