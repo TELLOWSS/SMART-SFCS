@@ -12,6 +12,13 @@ const formatDateTime = (isoString: string): string => {
   }).format(date);
 };
 
+const formatFloorLabel = (floor: number | string): string => {
+  if (typeof floor === 'number' && Number.isFinite(floor)) return `${floor}층`;
+  const text = String(floor || '').trim();
+  if (!text) return '-';
+  return /층$/.test(text) ? text : `${text}층`;
+};
+
 const GangformPTWHistory: React.FC = () => {
   const [records, setRecords] = useState<GangformPtwRecordRow[]>([]);
   const [selectedBuilding, setSelectedBuilding] = useState<string>('ALL');
@@ -113,7 +120,7 @@ const GangformPTWHistory: React.FC = () => {
                     className="cursor-pointer border-t border-slate-200 hover:bg-slate-50"
                   >
                     <td className="px-3 py-2 text-sm text-slate-700">{formatDateTime(record.created_at)}</td>
-                    <td className="px-3 py-2 text-sm font-bold text-slate-800">{record.building} {record.floor}</td>
+                    <td className="px-3 py-2 text-sm font-bold text-slate-800">{record.building} {formatFloorLabel(record.floor)}</td>
                     <td className="px-3 py-2 text-sm text-slate-700">{record.compressive_strength}</td>
                     <td className="px-3 py-2 text-sm">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[11px] font-black ${
@@ -148,7 +155,7 @@ const GangformPTWHistory: React.FC = () => {
           <div className="w-full max-w-6xl bg-white rounded-2xl border border-slate-200 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="p-5 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-black text-slate-900">{selectedRecord.building} {selectedRecord.floor} 상세 기록</h2>
+                <h2 className="text-lg font-black text-slate-900">{selectedRecord.building} {formatFloorLabel(selectedRecord.floor)} 상세 기록</h2>
                 <p className="text-xs text-slate-500">{formatDateTime(selectedRecord.created_at)}</p>
               </div>
               <button

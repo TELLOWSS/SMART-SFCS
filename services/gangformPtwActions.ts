@@ -4,7 +4,7 @@ import type { GangformPTWPayload } from '../components/GangformPTW';
 export interface GangformPtwRecordRow {
   id: string;
   building: string;
-  floor: string;
+  floor: number | string;
   compressive_strength: number;
   checklist: {
     tbmAndPPE: boolean;
@@ -20,6 +20,21 @@ export interface GangformPtwRecordRow {
   created_at: string;
 }
 
+const parseFloorToInteger = (floorText: string): number => {
+  const raw = String(floorText || '').trim();
+  const matched = raw.match(/\d+/);
+  if (!matched) {
+    throw new Error(`PTW 완료 기록 저장 실패: 층 정보 형식이 올바르지 않습니다 (${raw || '빈 값'})`);
+  }
+
+  const floor = Number(matched[0]);
+  if (!Number.isFinite(floor) || floor <= 0) {
+    throw new Error(`PTW 완료 기록 저장 실패: 층 정보가 유효하지 않습니다 (${raw})`);
+  }
+
+  return floor;
+};
+
 const toRecordInsertPayload = (payload: GangformPTWPayload) => {
   const beforeWork = Object.values(payload.requiredPhotos.beforeWork).filter(
     (url): url is string => Boolean(url)
@@ -30,7 +45,7 @@ const toRecordInsertPayload = (payload: GangformPTWPayload) => {
 
   return {
     building: payload.building,
-    floor: payload.floor,
+    floor: parseFloorToInteger(payload.floor),
     compressive_strength: payload.essentialChecks.compressiveStrength,
     checklist: {
       tbmAndPPE: payload.essentialChecks.tbmAndPPE,
