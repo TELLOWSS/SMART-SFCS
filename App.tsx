@@ -379,6 +379,10 @@ const App: React.FC = () => {
   const prevBuildingsRef = useRef<Building[]>([]);
   const analysisAlertKeyRef = useRef<string | null>(null);
   const ptwDetailRef = useRef<HTMLDivElement | null>(null);
+  // [Fix] 도면 정규화 재저장이 세션 당 최대 1회만 실행되도록 보장.
+  // 모든 기기가 라이브 스냅샷마다 saveAllBuildings를 호출하면 기기 간 동시 쓰기 경쟁(Race Condition)이
+  // 발생해 다른 기기에서 요청한 상태 변경이 덮어씌워질 수 있다.
+  const normalizedOnceRef = useRef<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -542,7 +546,11 @@ const App: React.FC = () => {
 
               // [Fix] 캐시 데이터(isLive=false)로 Firebase를 덮어쓰면 기기마다 서로 다른 양생완료 상태가 생기는 문제 발생
               // 반드시 실시간 서버 데이터(isLive=true)일 때만 정규화된 데이터를 Firebase에 재저장한다.
-              if (isLive && JSON.stringify(normalizedBuildings) !== JSON.stringify(serverBuildings)) {
+              // [Fix2] normalizedOnceRef 를 통해 세션당 최대 1회만 재저장한다.
+              // 여러 기기가 동시에 스냅샷을 받아 모두 saveAllBuildings를 호출하면
+              // 마지막 쓰기가 이기는(last-write-wins) 방식으로 다른 기기의 최신 상태 변경이 손실될 수 있다.
+              if (isLive && !normalizedOnceRef.current && JSON.stringify(normalizedBuildings) !== JSON.stringify(serverBuildings)) {
+                normalizedOnceRef.current = true;
                 saveAllBuildings(normalizedBuildings).catch((e) => {
                   console.error('도면 정규화 데이터 재저장 실패:', e);
                 });

@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, query, orderBy, limit, enableIndexedDbPersistence, initializeFirestore, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, addDoc, writeBatch, getDocs, query, orderBy, limit, initializeFirestore, persistentLocalCache, deleteDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Building, ChatMessage, AnalysisResult } from '../types';
 
@@ -41,6 +41,8 @@ export interface GangformPtwForceEditEventRecord {
 // [설정 완료] 사용자가 제공한 Firebase 키 적용됨
 // 이 설정값은 프로젝트 식별용이며, 실제 보안은 Firebase Console의 보안 규칙(Rules)으로 관리됩니다.
 // ==================================================================================
+const FIRESTORE_CACHE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
 const firebaseConfig = {
   apiKey: "AIzaSyA9Rx7DCFoxJWPU7zMav8NWtR71YJOHbJI",
   authDomain: "gen-lang-client-0371209150.firebaseapp.com",
@@ -62,12 +64,12 @@ try {
         // [Fix] 캐시 크기를 제한하여 오래된 캐시 데이터가 과도하게 쌓이는 것을 방지한다.
         // CACHE_SIZE_UNLIMITED 사용 시 기기마다 서로 다른 오래된 캐시 상태가 유지되어
         // 양생완료 등의 상태가 기기마다 다르게 보이는 문제가 발생할 수 있다.
+        // [Fix2] Firebase 9.6+ 권장 방식인 persistentLocalCache를 사용하여
+        // 기존의 deprecated enableIndexedDbPersistence 호출을 제거한다.
         db = initializeFirestore(app, {
-            cacheSizeBytes: 10 * 1024 * 1024 // 10MB
-        });
-
-        enableIndexedDbPersistence(db).catch((err) => {
-            console.log('Persistence mode:', err.code);
+            localCache: persistentLocalCache({
+                cacheSizeBytes: FIRESTORE_CACHE_SIZE_BYTES
+            })
         });
 
         signInAnonymously(auth).then(() => {
@@ -250,7 +252,8 @@ export const saveGangformPtwData = async (ptwByBuilding: GangformPtwStoredMap) =
 export const subscribeToGangformPtwData = (callback: (records: GangformPtwStoredMap) => void) => {
     if (!db) return () => {};
 
-    const unsubscribe = onSnapshot(doc(db, "site_data", "gangform_ptw"), (snapshot) => {
+    const unsubscribe = onSnapshot(doc(db, "site_data", "gangform_ptw"), { includeMetadataChanges: true }, (snapshot) => {
+        if (snapshot.metadata.fromCache) return; // 캐시 데이터는 무시하고 서버 확정 데이터만 처리
         if (!snapshot.exists()) {
             callback({});
             return;
