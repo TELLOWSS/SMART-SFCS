@@ -66,6 +66,11 @@ interface WorkerSnapshot {
   status: ApprovalStatus;
 }
 
+interface ValidationIssue {
+  message: string;
+  target: 'building' | 'floor' | 'strength' | 'tbmAndPPE' | 'lowerControl' | 'clearDebris' | 'beforeWorkPhotos' | 'status';
+}
+
 export const BEFORE_WORK_KEYS = [
   'TBM_및_보호구',
   '와이어로프_반자동샤클',
@@ -200,7 +205,13 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [isPracticeMode, setIsPracticeMode] = useState(false);
   const [undoStack, setUndoStack] = useState<WorkerSnapshot[]>([]);
+  const buildingInputRef = useRef<HTMLInputElement | null>(null);
   const floorInputRef = useRef<HTMLInputElement | null>(null);
+  const strengthInputRef = useRef<HTMLInputElement | null>(null);
+  const tbmCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const lowerControlCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const clearDebrisCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const beforeWorkPhotosRef = useRef<HTMLDivElement | null>(null);
 
   const storageKey = useMemo(() => getLocalStorageKey(buildingId), [buildingId]);
 
@@ -270,14 +281,81 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   const canEditBeforeWorkSection = status !== 'completed';
   const canSubmitRequest = status === 'draft' || status === 'rejected';
 
-  const workerReadyForRequest =
-    payload.building.trim().length > 0 &&
-    payload.floor.trim().length > 0 &&
-    payload.essentialChecks.compressiveStrength >= 5 &&
-    payload.essentialChecks.tbmAndPPE &&
-    payload.essentialChecks.lowerControl &&
-    payload.essentialChecks.clearDebris &&
-    beforeWorkCompleted;
+  const requestValidation = useMemo(() => {
+    const checks = {
+      building: payload.building.trim().length > 0,
+      floor: payload.floor.trim().length > 0,
+      strength: payload.essentialChecks.compressiveStrength >= 5,
+      tbmAndPPE: payload.essentialChecks.tbmAndPPE,
+      lowerControl: payload.essentialChecks.lowerControl,
+      clearDebris: payload.essentialChecks.clearDebris,
+      beforeWorkPhotos: beforeWorkCompleted,
+      requestStatus: canSubmitRequest
+    };
+
+    const unmetIssues: ValidationIssue[] = [];
+    if (!checks.building) unmetIssues.push({ message: '동 정보를 입력하세요.', target: 'building' });
+    if (!checks.floor) unmetIssues.push({ message: '층 정보를 입력하세요.', target: 'floor' });
+    if (!checks.strength) unmetIssues.push({ message: '압축강도 5 이상을 입력하세요.', target: 'strength' });
+    if (!checks.tbmAndPPE) unmetIssues.push({ message: 'TBM 및 보호구 확인 체크가 필요합니다.', target: 'tbmAndPPE' });
+    if (!checks.lowerControl) unmetIssues.push({ message: '하부 통제 및 감시인 배치 체크가 필요합니다.', target: 'lowerControl' });
+    if (!checks.clearDebris) unmetIssues.push({ message: '발판 상부 낙하물 제거 체크가 필요합니다.', target: 'clearDebris' });
+    if (!checks.beforeWorkPhotos) unmetIssues.push({ message: '승인신청 필수 사진 5장을 모두 업로드하세요.', target: 'beforeWorkPhotos' });
+    if (!checks.requestStatus) {
+      if (status === 'requested') unmetIssues.push({ message: '현재 승인 대기 상태입니다. 관리자 승인 후 다음 절차를 진행하세요.', target: 'status' });
+      if (status === 'approved') unmetIssues.push({ message: '현재 승인 완료 상태입니다. 인상 완료 처리로 진행하세요.', target: 'status' });
+      if (status === 'completed') unmetIssues.push({ message: '현재 인상 완료 상태입니다. 다음 층 인상 준비하기를 진행하세요.', target: 'status' });
+    }
+
+    return {
+      ready: checks.building
+        && checks.floor
+        && checks.strength
+        && checks.tbmAndPPE
+        && checks.lowerControl
+        && checks.clearDebris
+        && checks.beforeWorkPhotos,
+      disabled: !checks.requestStatus || unmetIssues.length > 0,
+      unmetIssues
+    };
+  }, [beforeWorkCompleted, canSubmitRequest, payload, status]);
+
+  const focusValidationTarget = (target: ValidationIssue['target']) => {
+    const focusMap: Record<ValidationIssue['target'], () => void> = {
+      building: () => {
+        buildingInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        buildingInputRef.current?.focus();
+      },
+      floor: () => {
+        floorInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        floorInputRef.current?.focus();
+      },
+      strength: () => {
+        strengthInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        strengthInputRef.current?.focus();
+      },
+      tbmAndPPE: () => {
+        tbmCheckboxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        tbmCheckboxRef.current?.focus();
+      },
+      lowerControl: () => {
+        lowerControlCheckboxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        lowerControlCheckboxRef.current?.focus();
+      },
+      clearDebris: () => {
+        clearDebrisCheckboxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        clearDebrisCheckboxRef.current?.focus();
+      },
+      beforeWorkPhotos: () => {
+        beforeWorkPhotosRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
+      status: () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+
+    focusMap[target]();
+  };
 
   const nextFloorNumber = parseFloorNumber(payload.floor)?.valueOf();
 
@@ -362,7 +440,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   };
 
   const submitRequest = async () => {
-    if (!workerReadyForRequest || isSubmitting) return;
+    if (!requestValidation.ready || !canSubmitRequest || isSubmitting) return;
 
     try {
       setIsSubmitting(true);
@@ -491,6 +569,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-600">동</label>
             <input
+              ref={buildingInputRef}
               type="text"
               placeholder="예: 101동"
               value={payload.building}
@@ -515,6 +594,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       <div className="space-y-3">
         <label className="block text-sm font-black text-slate-700">압축강도 (최소 5)</label>
         <input
+          ref={strengthInputRef}
           type="number"
           min={0}
           value={payload.essentialChecks.compressiveStrength || ''}
@@ -530,6 +610,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
         <p className="text-sm font-black text-slate-700">필수 체크</p>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input
+            ref={tbmCheckboxRef}
             type="checkbox"
             checked={payload.essentialChecks.tbmAndPPE}
             onChange={(e) => handleCheckChange('tbmAndPPE', e.target.checked)}
@@ -538,6 +619,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
         </label>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input
+            ref={lowerControlCheckboxRef}
             type="checkbox"
             checked={payload.essentialChecks.lowerControl}
             onChange={(e) => handleCheckChange('lowerControl', e.target.checked)}
@@ -546,6 +628,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
         </label>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input
+            ref={clearDebrisCheckboxRef}
             type="checkbox"
             checked={payload.essentialChecks.clearDebris}
             onChange={(e) => handleCheckChange('clearDebris', e.target.checked)}
@@ -554,7 +637,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
         </label>
       </div>
 
-      <div>
+      <div ref={beforeWorkPhotosRef}>
         <h3 className="text-sm font-black text-slate-700 mb-3">작업 승인신청 필수 사진 5장</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {BEFORE_WORK_KEYS.map((key) => {
@@ -589,11 +672,27 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
 
       <button
         onClick={submitRequest}
-        disabled={!workerReadyForRequest || !canSubmitRequest || isSubmitting}
+        disabled={requestValidation.disabled || isSubmitting}
         className="w-full py-3 rounded-xl bg-blue-600 text-white font-black text-sm disabled:opacity-40"
       >
         안전 작업 허가(PTW) 발급 요청
       </button>
+
+      {requestValidation.unmetIssues.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-1">
+          <p className="text-xs font-black text-amber-800">요청 버튼이 비활성화된 사유</p>
+          {requestValidation.unmetIssues.map((issue, index) => (
+            <button
+              key={`${issue.message}-${index}`}
+              type="button"
+              onClick={() => focusValidationTarget(issue.target)}
+              className="block text-left text-[11px] text-amber-700 underline underline-offset-2 hover:text-amber-800"
+            >
+              - {issue.message}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
         <p className="text-xs font-black text-slate-700">알림 공유 시 전달되는 내용</p>
