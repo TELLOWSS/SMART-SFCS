@@ -219,6 +219,32 @@ const saveAllBuildingsWithFirebase = async (buildings: Building[]) => {
     }
 };
 
+const fetchAllBuildingsWithFirebase = async (): Promise<Building[]> => {
+    if (!db) return [];
+
+    try {
+        if (auth && !auth.currentUser) {
+            try {
+                await signInAnonymously(auth);
+            } catch {
+                // 이미 로그인 진행 중이거나 익명 인증이 비활성화된 경우 대기 후 재시도한다.
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        const snapshot = await getDocs(collection(db, 'buildings'));
+        const buildings: Building[] = [];
+        snapshot.forEach((snapshotDoc) => {
+            const data = snapshotDoc.data() as Building;
+            buildings.push({ ...data, id: data?.id || snapshotDoc.id });
+        });
+        return sortBuildingsById(buildings);
+    } catch (error) {
+        console.warn('Firebase 건물 백필 소스 조회 실패:', error);
+        return [];
+    }
+};
+
 try {
     if (firebaseConfig.apiKey) {
         const app = initializeApp(firebaseConfig);
@@ -329,12 +355,20 @@ export const initializeDataIfEmpty = async (initialBuildings: Building[]) => {
         if (error) throw error;
         preferredBuildingsBackend = 'supabase';
 
-        // count > 0 이면 전체를 스킵하는 대신, ID 단위로 누락된 동만 업로드한다.
-        // 이렇게 해야 테이블에 일부 동만 있을 때 나머지 동이 UI에서 사라지는 현상을 방지한다.
         const existingIds = new Set((data || []).map((row: any) => String(row.id)));
-        const missingBuildings = initialBuildings.filter(b => !existingIds.has(b.id));
-        if (missingBuildings.length > 0) {
-            await upsertSupabaseBuildings(missingBuildings);
+
+        // 1) 기존 Firebase 데이터가 더 많다면 이를 우선 백필해 과거 동 목록을 보존한다.
+        const firebaseSeedBuildings = await fetchAllBuildingsWithFirebase();
+        const missingFromSupabaseByFirebase = firebaseSeedBuildings.filter(b => !existingIds.has(b.id));
+        if (missingFromSupabaseByFirebase.length > 0) {
+            await upsertSupabaseBuildings(missingFromSupabaseByFirebase);
+            missingFromSupabaseByFirebase.forEach(b => existingIds.add(b.id));
+        }
+
+        // 2) Firebase에도 없는 경우를 대비해 정적 초기 데이터 누락분도 채운다.
+        const missingFromInitial = initialBuildings.filter(b => !existingIds.has(b.id));
+        if (missingFromInitial.length > 0) {
+            await upsertSupabaseBuildings(missingFromInitial);
         }
     } catch (error) {
         if (shouldFallbackToFirebase(error)) {
