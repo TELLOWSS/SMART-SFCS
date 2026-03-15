@@ -267,6 +267,9 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     return BEFORE_WORK_KEYS.every((key) => Boolean(payload.requiredPhotos.beforeWork[key]));
   }, [payload.requiredPhotos.beforeWork]);
 
+  const canEditBeforeWorkSection = status !== 'completed';
+  const canSubmitRequest = status === 'draft' || status === 'rejected';
+
   const workerReadyForRequest =
     payload.building.trim().length > 0 &&
     payload.floor.trim().length > 0 &&
@@ -566,7 +569,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
                     type="file"
                     accept="image/*"
                     className="hidden"
-                    disabled={isUploading || status !== 'draft'}
+                    disabled={isUploading || !canEditBeforeWorkSection}
                     onChange={(e) => handleBeforePhotoUpload(key, e.target.files?.[0] || null)}
                   />
                 </label>
@@ -586,7 +589,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
 
       <button
         onClick={submitRequest}
-        disabled={!workerReadyForRequest || status !== 'draft' || isSubmitting}
+        disabled={!workerReadyForRequest || !canSubmitRequest || isSubmitting}
         className="w-full py-3 rounded-xl bg-blue-600 text-white font-black text-sm disabled:opacity-40"
       >
         안전 작업 허가(PTW) 발급 요청
