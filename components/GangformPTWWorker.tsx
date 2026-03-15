@@ -223,13 +223,11 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   useEffect(() => {
     const localDraft = readLocalDraft(storageKey);
     const normalizedRemotePayload = normalizeGangformPayload(buildingId, initialData);
-    const localSavedAt = parseIsoTimestamp(localDraft?.savedAt);
     const remoteSavedAt = parseIsoTimestamp(remoteUpdatedAt);
     const hasRemoteState = Boolean(initialData) || initialStatus !== 'draft' || remoteSavedAt > 0;
-    // 다기기 실시간 동기화를 위해 서버 타임스탬프가 있으면 항상 서버 상태를 우선한다.
-    // 로컬 초안(savedAt)이 더 최신처럼 보여도 기기 시계 오차/오래된 초안 때문에
-    // 타 기기 변경사항이 가려질 수 있어 원격 우선으로 고정한다.
-    const shouldPreferRemote = hasRemoteState && (remoteSavedAt > 0 || initialStatus !== 'draft');
+    // 원격 데이터가 존재하면 항상 서버 상태를 우선한다.
+    // (구형 레코드 updatedAt 누락/기기 시계 오차에서도 로컬 초안이 원격을 덮지 않도록 보장)
+    const shouldPreferRemote = hasRemoteState;
 
     if (localDraft && !shouldPreferRemote) {
       setPayload(normalizeGangformPayload(buildingId, localDraft.payload));
@@ -404,28 +402,30 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     file: File | null
   ) => {
     if (!file) return;
+    let previousPayload: GangformPTWPayload | null = null;
     try {
       setUploadingKey(key);
       const { publicUrl } = await uploadGangformPhoto(file, 'beforeWork', key);
-      let nextPayload: GangformPTWPayload | null = null;
-      pushUndoSnapshot();
-      setPayload((prev) => ({
-        ...(nextPayload = {
-          ...prev,
-          requiredPhotos: {
-            ...prev.requiredPhotos,
-            beforeWork: {
-              ...prev.requiredPhotos.beforeWork,
-              [key]: publicUrl
-            }
+      previousPayload = payload;
+      const nextPayload: GangformPTWPayload = {
+        ...previousPayload,
+        requiredPhotos: {
+          ...previousPayload.requiredPhotos,
+          beforeWork: {
+            ...previousPayload.requiredPhotos.beforeWork,
+            [key]: publicUrl
           }
-        })
-      }));
+        }
+      };
+      pushUndoSnapshot();
+      setPayload(nextPayload);
 
-      if (!isPracticeMode && nextPayload) {
+      if (!isPracticeMode) {
         await onPayloadChange?.(nextPayload, status);
       }
     } catch (error) {
+      // 서버 저장 실패 시 로컬 화면도 이전 상태로 복구해 새로고침 시 되돌아가는 혼선을 방지한다.
+      if (previousPayload) setPayload(previousPayload);
       alert(error instanceof Error ? error.message : '이미지 업로드 실패');
     } finally {
       setUploadingKey(null);
@@ -434,28 +434,29 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
 
   const handleDuringPhotoUpload = async (file: File | null) => {
     if (!file) return;
+    let previousPayload: GangformPTWPayload | null = null;
     try {
       setUploadingKey(DURING_WORK_KEY);
       const { publicUrl } = await uploadGangformPhoto(file, 'duringWork', DURING_WORK_KEY);
-      let nextPayload: GangformPTWPayload | null = null;
-      pushUndoSnapshot();
-      setPayload((prev) => ({
-        ...(nextPayload = {
-          ...prev,
-          requiredPhotos: {
-            ...prev.requiredPhotos,
-            duringWork: {
-              ...prev.requiredPhotos.duringWork,
-              작업중_안전블럭체결: publicUrl
-            }
+      previousPayload = payload;
+      const nextPayload: GangformPTWPayload = {
+        ...previousPayload,
+        requiredPhotos: {
+          ...previousPayload.requiredPhotos,
+          duringWork: {
+            ...previousPayload.requiredPhotos.duringWork,
+            작업중_안전블럭체결: publicUrl
           }
-        })
-      }));
+        }
+      };
+      pushUndoSnapshot();
+      setPayload(nextPayload);
 
-      if (!isPracticeMode && nextPayload) {
+      if (!isPracticeMode) {
         await onPayloadChange?.(nextPayload, status);
       }
     } catch (error) {
+      if (previousPayload) setPayload(previousPayload);
       alert(error instanceof Error ? error.message : '작업중 사진 업로드 실패');
     } finally {
       setUploadingKey(null);
