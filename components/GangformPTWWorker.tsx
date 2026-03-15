@@ -53,6 +53,7 @@ interface GangformPTWWorkerProps {
   onSubmit?: (payload: GangformPTWPayload) => Promise<void> | void;
   onComplete?: (payload: GangformPTWPayload) => Promise<void> | void;
   onCycleReset?: (payload: GangformPTWPayload) => Promise<void> | void;
+  onRestoreCycle?: (payload: GangformPTWPayload, status: ApprovalStatus) => Promise<void> | void;
 }
 
 interface LocalDraftState {
@@ -199,7 +200,8 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   onPayloadChange,
   onSubmit,
   onComplete,
-  onCycleReset
+  onCycleReset,
+  onRestoreCycle
 }) => {
   const [payload, setPayload] = useState<GangformPTWPayload>(normalizeGangformPayload(buildingId, initialData));
   const [status, setStatus] = useState<ApprovalStatus>(initialStatus);
@@ -207,6 +209,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [isPracticeMode, setIsPracticeMode] = useState(false);
   const [undoStack, setUndoStack] = useState<WorkerSnapshot[]>([]);
+  const [cycleUndoSnapshot, setCycleUndoSnapshot] = useState<WorkerSnapshot | null>(null);
   const buildingInputRef = useRef<HTMLInputElement | null>(null);
   const floorInputRef = useRef<HTMLInputElement | null>(null);
   const strengthInputRef = useRef<HTMLInputElement | null>(null);
@@ -237,6 +240,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
     setStatus(initialStatus);
     setIsPracticeMode(false);
     setUndoStack([]);
+    setCycleUndoSnapshot(null);
 
     if (shouldPreferRemote) {
       clearLocalDraft(storageKey);
@@ -508,8 +512,17 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
   };
 
   const prepareNextFloorCycle = async () => {
+    if (status !== 'completed') return;
+    if (!window.confirm('다음 층 인상 준비로 전환하시겠습니까? 실수 전환 시 바로 복원할 수 있습니다.')) {
+      return;
+    }
+
     const currentFloor = parseFloorNumber(payload.floor);
     const nextFloor = (currentFloor ?? 0) + 1;
+    const previousSnapshot: WorkerSnapshot = {
+      payload,
+      status
+    };
 
     const nextPayload: GangformPTWPayload = {
       ...createDefaultPayload(payload.building || buildingId),
@@ -517,6 +530,7 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       floor: `${nextFloor}층`
     };
 
+    setCycleUndoSnapshot(previousSnapshot);
     clearLocalDraft(storageKey);
     setUndoStack([]);
     setPayload(nextPayload);
@@ -524,6 +538,27 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
 
     if (!isPracticeMode) {
       await onCycleReset?.(nextPayload);
+    }
+  };
+
+  const restorePreviousCycle = async () => {
+    if (!cycleUndoSnapshot || isSubmitting) return;
+
+    try {
+      setIsSubmitting(true);
+      setPayload(cycleUndoSnapshot.payload);
+      setStatus(cycleUndoSnapshot.status);
+      setUndoStack([]);
+
+      if (!isPracticeMode) {
+        await onRestoreCycle?.(cycleUndoSnapshot.payload, cycleUndoSnapshot.status);
+      }
+
+      setCycleUndoSnapshot(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '이전 층 상태 복원 실패');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -774,13 +809,30 @@ const GangformPTWWorker: React.FC<GangformPTWWorkerProps> = ({
       )}
 
       {status === 'completed' && (
-        <button
-          onClick={prepareNextFloorCycle}
-          disabled={isSubmitting}
-          className="w-full py-3 rounded-xl bg-indigo-600 text-white font-black text-sm disabled:opacity-40"
-        >
-          다음 층({(nextFloorNumber ?? 0) + 1}층) 인상 준비하기
-        </button>
+        <div className="space-y-2">
+          <button
+            onClick={prepareNextFloorCycle}
+            disabled={isSubmitting}
+            className="w-full py-3 rounded-xl bg-indigo-600 text-white font-black text-sm disabled:opacity-40"
+          >
+            다음 층({(nextFloorNumber ?? 0) + 1}층) 인상 준비하기
+          </button>
+          <p className="text-[11px] text-slate-500">실수로 눌렀을 경우 아래 복원 버튼으로 이전 완료 상태를 되돌릴 수 있습니다.</p>
+        </div>
+      )}
+
+      {cycleUndoSnapshot && status === 'draft' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+          <p className="text-xs font-black text-amber-800">다음 층 준비로 전환되었습니다. 이전 완료 상태로 되돌릴 수 있습니다.</p>
+          <button
+            type="button"
+            onClick={restorePreviousCycle}
+            disabled={isSubmitting}
+            className="w-full py-2.5 rounded-xl bg-amber-600 text-white text-sm font-black disabled:opacity-40"
+          >
+            이전 층 완료 상태로 되돌리기
+          </button>
+        </div>
       )}
     </section>
   );

@@ -22,6 +22,7 @@ interface GangformPTWProps {
   onSubmit?: (payload: GangformPTWPayload) => Promise<void> | void;
   onComplete?: (payload: GangformPTWPayload) => Promise<void> | void;
   onCycleReset?: (payload: GangformPTWPayload) => Promise<void> | void;
+  onRestoreCycle?: (payload: GangformPTWPayload, status: ApprovalStatus) => Promise<void> | void;
   onApprove?: () => Promise<void> | void;
   onReject?: () => Promise<void> | void;
   onForceStatusChange?: (status: ApprovalStatus, reason: string) => Promise<void> | void;
@@ -233,6 +234,7 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
   onSubmit,
   onComplete,
   onCycleReset,
+  onRestoreCycle,
   onApprove,
   onReject,
   onForceStatusChange
@@ -249,6 +251,7 @@ const GangformPTW: React.FC<GangformPTWProps> = ({
         onSubmit={onSubmit}
         onComplete={onComplete}
         onCycleReset={onCycleReset}
+        onRestoreCycle={onRestoreCycle}
       />
     );
   }

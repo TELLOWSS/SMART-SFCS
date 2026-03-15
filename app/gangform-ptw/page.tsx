@@ -272,11 +272,31 @@ const GangformPTWPage: React.FC = () => {
               const current = prev[selectedBuilding.id];
               const nextRecord = {
                 payload,
-                status: current?.status || workerStatus,
+                status: workerStatus || current?.status || 'draft',
                 updatedAt: now,
                 requestedAt: current?.requestedAt || null,
                 approvedAt: current?.approvedAt || null,
                 completedAt: current?.completedAt || null
+              };
+              const next = {
+                ...prev,
+                [selectedBuilding.id]: nextRecord
+              };
+              void saveGangformPtwRecord(selectedBuilding.id, nextRecord);
+              return next;
+            });
+            }}
+            onRestoreCycle={(payload, restoredStatus) => {
+            const now = new Date().toISOString();
+            setGangformPtwByBuilding((prev) => {
+              const current = prev[selectedBuilding.id];
+              const nextRecord = {
+                payload,
+                status: restoredStatus,
+                updatedAt: now,
+                requestedAt: current?.requestedAt || null,
+                approvedAt: current?.approvedAt || null,
+                completedAt: restoredStatus === 'completed' ? (current?.completedAt || now) : current?.completedAt || null
               };
               const next = {
                 ...prev,

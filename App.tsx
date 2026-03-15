@@ -2260,7 +2260,7 @@ const App: React.FC = () => {
                         const current = prev[selectedPtwBuilding.id];
                         const nextRecord = {
                           payload,
-                          status: current?.status || workerStatus,
+                          status: workerStatus || current?.status || 'draft',
                           updatedAt: now,
                           requestedAt: current?.requestedAt || null,
                           approvedAt: current?.approvedAt || null,
@@ -2365,6 +2365,27 @@ const App: React.FC = () => {
                           requestedAt: null,
                           approvedAt: null,
                           completedAt: null
+                        };
+                        const next = {
+                          ...prev,
+                          [selectedPtwBuilding.id]: nextRecord
+                        };
+                        void saveGangformPtwRecord(selectedPtwBuilding.id, nextRecord);
+                        return next;
+                      });
+                    }}
+                      onRestoreCycle={(payload, restoredStatus) => {
+                      const now = new Date().toISOString();
+                      addNotification(`[${selectedPtwBuilding.name}] 실수 전환이 취소되어 이전 완료 상태로 복원되었습니다.`, 'info');
+                      setGangformPtwByBuilding(prev => {
+                        const current = prev[selectedPtwBuilding.id];
+                        const nextRecord = {
+                          payload,
+                          status: restoredStatus,
+                          updatedAt: now,
+                          requestedAt: current?.requestedAt || null,
+                          approvedAt: current?.approvedAt || null,
+                          completedAt: restoredStatus === 'completed' ? (current?.completedAt || now) : current?.completedAt || null
                         };
                         const next = {
                           ...prev,
